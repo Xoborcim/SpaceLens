@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="SpaceLens.App.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer>
+        <StackPanel Padding="32,20,32,32" Spacing="16" MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="Settings" Style="{StaticResource PageTitleStyle}" />
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Appearance" Style="{StaticResource SectionTitleStyle}" />
+                    <RadioButtons x:Name="ThemeChoice" Header="Theme" SelectionChanged="OnThemeChanged">
+                        <RadioButton Content="Use Windows setting" Tag="System" />
+                        <RadioButton Content="Light" Tag="Light" />
+                        <RadioButton Content="Dark" Tag="Dark" />
+                    </RadioButtons>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Scanning" Style="{StaticResource SectionTitleStyle}" />
+                    <ToggleSwitch x:Name="DevToggle" Header="Detect developer files (node_modules, build outputs, package caches)" Toggled="OnSettingToggled" />
+                    <ToggleSwitch x:Name="StoreToggle" Header="Include Microsoft Store apps in Installed Apps" Toggled="OnSettingToggled" />
+                    <ComboBox x:Name="EngineChoice" Header="Scan engine" MinWidth="320" SelectionChanged="OnEngineChanged">
+                        <ComboBoxItem Content="Native (recommended)" Tag="Native" />
+                        <ComboBoxItem Content="Managed .NET enumeration" Tag="Managed" />
+                        <ComboBoxItem Content="FindFirstFileEx" Tag="FindFirstFile" />
+                    </ComboBox>
+                    <NumberBox
+                        x:Name="WorkersBox"
+                        Header="Parallel workers (0 = automatic, based on the drive type)"
+                        Minimum="0"
+                        Maximum="64"
+                        Width="320"
+                        HorizontalAlignment="Left"
+                        SpinButtonPlacementMode="Compact"
+                        ValueChanged="OnWorkersChanged" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Privacy and saved data" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock TextWrapping="Wrap" Text="SpaceLens runs entirely on this PC. It has no account, sends no telemetry or analytics, and never uploads file names, paths, installed programs or any other information. It does not connect to the internet." />
+                    <ToggleSwitch x:Name="RememberToggle" Header="Remember the last scan so results appear instantly at startup" Toggled="OnSettingToggled" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button x:Name="ClearSnapshotsButton" Content="Delete saved scans" Click="OnClearSnapshots" />
+                        <TextBlock x:Name="SnapshotSizeText" VerticalAlignment="Center" Style="{StaticResource SecondaryTextStyle}" />
+                    </StackPanel>
+                    <HyperlinkButton x:Name="DataFolderLink" Content="Open the SpaceLens data folder" Click="OnOpenDataFolder" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Diagnostics" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Text="Measurements from the most recent scan on this PC. Results depend on the drive, file system cache and the number of files." />
+                    <Grid x:Name="DiagnosticsGrid" ColumnSpacing="24" RowSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                    <Button Content="Copy diagnostics" Click="OnCopyDiagnostics" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="About" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock x:Name="VersionText" />
+                    <TextBlock Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Text="Shortcuts: Ctrl+R rescan  ·  Ctrl+F search  ·  Ctrl+L scan a folder  ·  Enter open  ·  Delete move to Recycle Bin (with confirmation)" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="SpaceLens.App.Views.FileTypesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+
+    <Grid Padding="32,20,32,20" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="File Types" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock
+                Style="{StaticResource SecondaryTextStyle}"
+                TextWrapping="Wrap"
+                Text="Space by kind of file, based on file extensions. Select a type to see its largest files." />
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="400" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource CardStyle}" Padding="0,4">
+                <ListView
+                    x:Name="TypeList"
+                    ItemTemplate="{StaticResource SummaryRowTemplate}"
+                    ItemContainerStyle="{StaticResource DenseListViewItemStyle}"
+                    SelectionMode="Single"
+                    SelectionChanged="OnTypeSelected"
+                    AutomationProperties.Name="File types" />
+            </Border>
+
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Padding="0,4">
+                <Grid RowSpacing="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Padding="16,10,16,4">
+                        <TextBlock x:Name="FilesTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock x:Name="FilesNote" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <ListView
+                        x:Name="FileList"
+                        Grid.Row="1"
+                        ItemTemplate="{StaticResource EntryRowTemplate}"
+                        ItemContainerStyle="{StaticResource DenseListViewItemStyle}"
+                        SelectionMode="Extended"
+                        AutomationProperties.Name="Largest files of the selected type" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

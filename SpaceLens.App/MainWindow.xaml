@@ -4,7 +4,134 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="SpaceLens">
-    <Grid>
-        <TextBlock Text="SpaceLens" HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="OnRescanAccelerator" />
+            <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="OnSearchAccelerator" />
+            <KeyboardAccelerator Key="L" Modifiers="Control" Invoked="OnScanFolderAccelerator" />
+            <KeyboardAccelerator Key="F5" Invoked="OnRescanAccelerator" />
+        </Grid.KeyboardAccelerators>
+
+        <!-- Custom title bar (drag region). -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Padding="16,0,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xEDA2;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <TextBlock Text="SpaceLens" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <NavigationView
+            x:Name="Nav"
+            Grid.Row="1"
+            PaneDisplayMode="Left"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="True"
+            OpenPaneLength="248"
+            IsTitleBarAutoPaddingEnabled="False"
+            SelectionChanged="OnNavSelectionChanged">
+            <NavigationView.AutoSuggestBox>
+                <AutoSuggestBox
+                    x:Name="SearchBox"
+                    PlaceholderText="Search results (Ctrl+F)"
+                    QueryIcon="Find"
+                    AutomationProperties.Name="Search scan results"
+                    ToolTipService.ToolTip="Examples: .iso   *.vmdk   steam   node_modules   &gt;5GB   type:video"
+                    TextChanged="OnSearchTextChanged"
+                    QuerySubmitted="OnSearchSubmitted" />
+            </NavigationView.AutoSuggestBox>
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Overview" Tag="overview" AccessKey="O">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Apps" Tag="apps" AccessKey="A">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE71D;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Folders" Tag="folders" AccessKey="D">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8B7;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Large Files" Tag="largefiles" AccessKey="L">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7C3;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="File Types" Tag="filetypes" AccessKey="T">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xEB05;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Storage Locations" Tag="storage" AccessKey="S">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xEDA2;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Dev Files" Tag="developer" AccessKey="V">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE943;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="IssuesNavItem" Content="Inaccessible locations" Tag="errors" Visibility="Collapsed">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE72E;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="IssuesBadge" Style="{ThemeResource CautionValueInfoBadgeStyle}" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
+
+        <!-- Scan status bar: always visible, updated ~5 times per second during a scan. -->
+        <Grid
+            x:Name="StatusBar"
+            Grid.Row="2"
+            Padding="16,8,12,8"
+            ColumnSpacing="12"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="0,1,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ProgressRing Width="20" Height="20" IsActive="{x:Bind State.IsScanning, Mode=OneWay}" Visibility="{x:Bind State.IsScanning, Mode=OneWay}" VerticalAlignment="Center" />
+
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="{x:Bind State.StatusTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{x:Bind State.StatusDetail, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}" AutomationProperties.LiveSetting="Polite" />
+                <TextBlock Text="{x:Bind State.StatusCurrent, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}" Visibility="{x:Bind State.IsScanning, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                <ProgressBar
+                    Margin="0,4,0,0"
+                    Maximum="100"
+                    Value="{x:Bind State.ProgressPercent, Mode=OneWay}"
+                    IsIndeterminate="{x:Bind State.ProgressIndeterminate, Mode=OneWay}"
+                    ShowPaused="{x:Bind State.IsPaused, Mode=OneWay}"
+                    Visibility="{x:Bind State.IsScanning, Mode=OneWay}"
+                    AutomationProperties.Name="Scan progress" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Visibility="{x:Bind State.IsScanning, Mode=OneWay}" Click="OnPauseClick" AutomationProperties.Name="{x:Bind State.PauseLabel, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="{x:Bind State.PauseGlyph, Mode=OneWay}" FontSize="14" />
+                        <TextBlock Text="{x:Bind State.PauseLabel, Mode=OneWay}" />
+                    </StackPanel>
+                </Button>
+                <Button Visibility="{x:Bind State.IsScanning, Mode=OneWay}" Click="OnCancelClick" AutomationProperties.Name="Cancel">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE711;" FontSize="14" />
+                        <TextBlock Text="Cancel" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="RescanButton" Visibility="Collapsed" Click="OnRescanClick" ToolTipService.ToolTip="Rescan (Ctrl+R)" AutomationProperties.Name="Rescan">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        <TextBlock Text="Rescan" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

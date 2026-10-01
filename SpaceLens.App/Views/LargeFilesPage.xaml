@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="SpaceLens.App.Views.LargeFilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:SpaceLens.App.Controls"
+    NavigationCacheMode="Required">
+
+    <Grid Padding="32,20,32,20" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="Large Files" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock x:Name="SummaryText" Style="{StaticResource SecondaryTextStyle}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+            <ComboBox x:Name="SizeFilter" Header="Size" MinWidth="140" SelectionChanged="OnFilterChanged" AutomationProperties.Name="Minimum size">
+                <ComboBoxItem Content="Over 100 MB" Tag="104857600" />
+                <ComboBoxItem Content="Over 1 GB" Tag="1073741824" IsSelected="True" />
+                <ComboBoxItem Content="Over 5 GB" Tag="5368709120" />
+                <ComboBoxItem Content="Over 10 GB" Tag="10737418240" />
+                <ComboBoxItem Content="Custom" Tag="custom" />
+            </ComboBox>
+            <NumberBox
+                x:Name="CustomSize"
+                Header="Minimum (MB)"
+                Width="140"
+                Minimum="1"
+                Value="500"
+                SpinButtonPlacementMode="Compact"
+                Visibility="Collapsed"
+                ValueChanged="OnCustomChanged" />
+            <ComboBox x:Name="TypeFilter" Header="Type" MinWidth="180" SelectionChanged="OnFilterChanged" AutomationProperties.Name="File type" />
+        </StackPanel>
+
+        <Grid Grid.Row="2" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" />
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource CardStyle}" Padding="0,4">
+                <Grid>
+                    <ListView
+                        x:Name="FileList"
+                        ItemTemplate="{StaticResource EntryRowTemplate}"
+                        ItemContainerStyle="{StaticResource DenseListViewItemStyle}"
+                        SelectionMode="Extended"
+                        SelectionChanged="OnSelectionChanged"
+                        AutomationProperties.Name="Large files" />
+                    <TextBlock x:Name="EmptyText" Style="{StaticResource SecondaryTextStyle}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+            <controls:DetailsPanel x:Name="Details" Grid.Column="1" />
+        </Grid>
+    </Grid>
+</Page>
