@@ -137,11 +137,16 @@ public static class ItemActions
             return false;
         }
 
+        long freeBefore = State.SelectedDrive?.FreeBytes ?? -1;
         var result = await State.Shell.MoveToRecycleBinAsync(items.Select(i => (i.Path, i.IsDirectory)).ToList(), State.WindowHandle);
         State.RemoveFromTree(items
             .Where(i => i.IsDirectory ? !Directory.Exists(i.Path) : !File.Exists(i.Path))
             .Select(i => (i.IsFile, i.Index))
             .ToList());
+        if (result.Success && freeBefore >= 0 && State.SelectedDrive is { } drive && drive.FreeBytes <= freeBefore)
+        {
+            State.StatusDetail += "  ·  Free space is unchanged until the Recycle Bin is emptied";
+        }
 
         if (!result.Success && !result.Cancelled)
         {

@@ -47,6 +47,10 @@ public sealed partial class OverviewPage : Page
         {
             UpdateHeader();
         }
+        else if (e.PropertyName == nameof(AppState.SelectedDrive))
+        {
+            UpdateDriveCard();
+        }
     }
 
     private void OnDriveChanged(object sender, SelectionChangedEventArgs e)

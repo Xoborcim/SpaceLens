@@ -247,6 +247,7 @@ public sealed partial class AppState : ObservableObject
         ErrorCount = tree.ErrorCount;
         State = ScanState.Snapshot;
         SelectDriveFor(tree.RootPath);
+        RefreshVolumeStats(tree.RootPath);
         UpdateStatusForFinishedTree();
         ResetAnalysis();
         TreeReplaced?.Invoke(this, EventArgs.Empty);
@@ -283,7 +284,9 @@ public sealed partial class AppState : ObservableObject
             return;
         }
 
-        var drive = DriveService.GetDrive(root);
+        // Re-read free space first: the drive card otherwise keeps the numbers from startup,
+        // so a delete followed by a rescan looks like nothing was freed.
+        var drive = RefreshVolumeStats(root);
         var tree = new ScanTree(root);
         if (drive is not null)
         {
@@ -366,6 +369,7 @@ public sealed partial class AppState : ObservableObject
         }
 
         State = result.Cancelled ? ScanState.Cancelled : ScanState.Completed;
+        RefreshVolumeStats(tree.RootPath);
         UpdateStatusForFinishedTree();
         ScanFinished?.Invoke(this, EventArgs.Empty);
 
@@ -487,6 +491,45 @@ public sealed partial class AppState : ObservableObject
     }
 
     private static string FormatElapsed(TimeSpan t) => t.TotalHours >= 1 ? t.ToString(@"h\:mm\:ss") : t.ToString(@"m\:ss");
+
+    /// <summary>
+    /// Re-reads Windows free and used space for the drive containing <paramref name="path"/>
+    /// and replaces the cached descriptor the Overview card displays.
+    /// </summary>
+    public DriveDescriptor? RefreshVolumeStats(string? path = null)
+    {
+        path ??= SelectedDrive?.RootPath ?? Tree?.RootPath;
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        var fresh = DriveService.GetDrive(path);
+        if (fresh is null)
+        {
+            return null;
+        }
+
+        for (int i = 0; i < Drives.Count; i++)
+        {
+            if (Drives[i].RootPath.Equals(fresh.RootPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (Drives[i] != fresh)
+                {
+                    Drives[i] = fresh;
+                }
+
+                break;
+            }
+        }
+
+        if (SelectedDrive is null || SelectedDrive.RootPath.Equals(fresh.RootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            SelectedDrive = fresh;
+        }
+
+        return fresh;
+    }
 
     private void SelectDriveFor(string root)
     {
@@ -755,7 +798,14 @@ public sealed partial class AppState : ObservableObject
             return;
         }
 
+        long freeBefore = SelectedDrive?.FreeBytes ?? -1;
+        var drive = RefreshVolumeStats();
         UpdateStatusForFinishedTree();
+        if (freeBefore >= 0 && drive is not null && drive.FreeBytes > freeBefore)
+        {
+            StatusDetail += $"  ·  Freed {SizeFormatter.Format(drive.FreeBytes - freeBefore)}";
+        }
+
         TreeMutated?.Invoke(this, EventArgs.Empty);
         _ = AnalyzeAsync(tree);
         if (Settings.RememberScans)

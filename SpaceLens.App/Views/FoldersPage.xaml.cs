@@ -223,12 +223,21 @@ public sealed partial class FoldersPage : Page
             do
             {
                 _rebuildPending = false;
+                tree = State.Tree;
+                if (tree is null || tree != _tree)
+                {
+                    break;
+                }
+
                 int version = _version;
                 var expanded = _expanded.ToHashSet();
                 var specs = await Task.Run(() => BuildSpecs(tree, expanded));
+                // A rescan replaces the tree while this rebuild is in flight. Retry against the new
+                // one instead of dropping the update, which left the old sizes on screen.
                 if (version != _version || tree != State.Tree)
                 {
-                    return;
+                    _rebuildPending = true;
+                    continue;
                 }
 
                 Reconcile(tree, specs);
