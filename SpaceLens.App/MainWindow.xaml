@@ -131,6 +131,19 @@
                         <TextBlock Text="Cancel" />
                     </StackPanel>
                 </Button>
+                <DropDownButton x:Name="ExportButton" Visibility="Collapsed" ToolTipService.ToolTip="Save the results to a file" AutomationProperties.Name="Export">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+                        <TextBlock Text="Export" />
+                    </StackPanel>
+                    <DropDownButton.Flyout>
+                        <MenuFlyout Placement="TopEdgeAlignedRight">
+                            <MenuFlyoutItem Text="Folders as CSV…" Tag="folders" Click="OnExportClick" />
+                            <MenuFlyoutItem Text="Large files as CSV…" Tag="files" Click="OnExportClick" />
+                            <MenuFlyoutItem Text="Full report as JSON…" Tag="json" Click="OnExportClick" />
+                        </MenuFlyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
                 <Button x:Name="RescanButton" Visibility="Collapsed" Click="OnRescanClick" ToolTipService.ToolTip="Rescan (Ctrl+R)" AutomationProperties.Name="Rescan">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE72C;" FontSize="14" />

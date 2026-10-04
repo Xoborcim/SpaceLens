@@ -30,6 +30,9 @@ dotnet publish SpaceLens.App -c Release -o publish\SpaceLens
 
 `SpaceLens.exe <folder>` starts a scan of that folder right away.
 
+Export (next to Rescan) saves the folders or the large files as CSV, or a full
+report as JSON. Sizes are in bytes and times are UTC (ISO 8601).
+
 Keyboard: Ctrl+R / F5 rescan, Ctrl+F search, Ctrl+L scan a folder, Enter opens,
 Delete shows the Recycle Bin confirmation (it never deletes without one), and
 Shift+F10 or the context-menu key shows the actions for the selected item.
