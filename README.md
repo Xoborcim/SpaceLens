@@ -37,6 +37,10 @@ the context menu offers "Free up space (online-only)": like the File Explorer
 command of the same name, the files stay in the cloud and only the local copy
 is removed by the provider. Nothing is deleted.
 
+"Add to cleanup basket" in the context menu collects files and folders from any
+page; the Cleanup basket page shows them together with their total and removes
+them through the normal Recycle Bin confirmation.
+
 Right-click a folder and choose "Rescan this folder" to update just that folder
 in the results instead of rescanning the whole drive.
 

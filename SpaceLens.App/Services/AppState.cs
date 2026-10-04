@@ -250,6 +250,7 @@ public sealed partial class AppState : ObservableObject
         RefreshVolumeStats(tree.RootPath);
         UpdateStatusForFinishedTree();
         ResetAnalysis();
+        ClearBasket();
         TreeReplaced?.Invoke(this, EventArgs.Empty);
         if (StartupSnapshotMs == 0)
         {
@@ -324,6 +325,7 @@ public sealed partial class AppState : ObservableObject
         State = ScanState.Scanning;
         StatusTitle = $"Scanning {root}";
         UpdateProgress();
+        ClearBasket();
         TreeReplaced?.Invoke(this, EventArgs.Empty);
         _timer.Start();
 
@@ -817,6 +819,7 @@ public sealed partial class AppState : ObservableObject
             StatusDetail += $"  ·  Freed {SizeFormatter.Format(drive.FreeBytes - freeBefore)}";
         }
 
+        PruneBasket();
         TreeMutated?.Invoke(this, EventArgs.Empty);
         _ = AnalyzeAsync(tree);
         if (Settings.RememberScans)
@@ -875,6 +878,75 @@ public sealed partial class AppState : ObservableObject
         finally
         {
             IsRescanningFolder = false;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Cleanup basket
+    // ---------------------------------------------------------------------------------------------
+
+    private readonly List<(bool IsFile, int Index)> _basket = [];
+
+    /// <summary>Items collected for removal from any page, as (isFile, index) in <see cref="Tree"/>.</summary>
+    public IReadOnlyList<(bool IsFile, int Index)> Basket => _basket;
+
+    public event EventHandler? BasketChanged;
+
+    public bool IsInBasket(bool isFile, int index) => _basket.Contains((isFile, index));
+
+    public void AddToBasket(ScanTree tree, IEnumerable<(bool IsFile, int Index)> items)
+    {
+        if (tree != Tree)
+        {
+            return;
+        }
+
+        int before = _basket.Count;
+        foreach (var item in items)
+        {
+            if ((item.IsFile ? tree.IsLiveFile(item.Index) : tree.IsLiveDirectory(item.Index) && item.Index != ScanTree.RootIndex) && !_basket.Contains(item))
+            {
+                _basket.Add(item);
+            }
+        }
+
+        if (_basket.Count != before)
+        {
+            BasketChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void RemoveFromBasket(IEnumerable<(bool IsFile, int Index)> items)
+    {
+        int removed = 0;
+        foreach (var item in items)
+        {
+            removed += _basket.Remove(item) ? 1 : 0;
+        }
+
+        if (removed > 0)
+        {
+            BasketChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void ClearBasket()
+    {
+        if (_basket.Count > 0)
+        {
+            _basket.Clear();
+            BasketChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>Drops items that were removed (or whose folder was removed or rescanned) from the basket.</summary>
+    private void PruneBasket()
+    {
+        var tree = Tree;
+        int removed = _basket.RemoveAll(i => tree is null || (i.IsFile ? !tree.IsLiveFile(i.Index) : !tree.IsLiveDirectory(i.Index)));
+        if (removed > 0)
+        {
+            BasketChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 

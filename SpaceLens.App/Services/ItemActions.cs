@@ -521,6 +521,17 @@ public static class ItemActions
             bool canRecycle = targets.All(CanRecycle);
             Add(targets.Count == 1 ? "Move to Recycle Bin" : $"Move {targets.Count} items to Recycle Bin", "\uE74D",
                 () => _ = RecycleAsync(targets), enabled: canRecycle, accel: new("Del"));
+            var keys = targets.Select(t => (t.IsFile, t.Index)).ToList();
+            if (keys.All(k => State.IsInBasket(k.IsFile, k.Index)))
+            {
+                Add("Remove from cleanup basket", "\uE738", () => State.RemoveFromBasket(keys));
+            }
+            else if (item.Tree is { } basketTree)
+            {
+                Add(targets.Count == 1 ? "Add to cleanup basket" : $"Add {targets.Count} items to cleanup basket", "\uE719",
+                    () => State.AddToBasket(basketTree, keys), enabled: targets.All(CanRecycle));
+            }
+
             if (!targets.All(IsRemovable))
             {
                 Add("Why can't this be removed?", "\uE897", () => _ = ShowProtectedAsync(targets.First(t => !IsRemovable(t))));

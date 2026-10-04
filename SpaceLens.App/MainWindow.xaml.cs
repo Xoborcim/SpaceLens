@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
         ["largefiles"] = typeof(LargeFilesPage),
         ["changes"] = typeof(ChangesPage),
         ["duplicates"] = typeof(DuplicatesPage),
+        ["basket"] = typeof(BasketPage),
         ["filetypes"] = typeof(FileTypesPage),
         ["storage"] = typeof(StoragePage),
         ["developer"] = typeof(DevFilesPage),
@@ -69,6 +70,7 @@ public sealed partial class MainWindow : Window
         };
         State.TreeReplaced += (_, _) => UpdateChrome();
         State.ScanFinished += (_, _) => UpdateChrome();
+        State.BasketChanged += (_, _) => UpdateChrome();
 
         RootGrid.Loaded += OnLoaded;
     }
@@ -130,6 +132,8 @@ public sealed partial class MainWindow : Window
         ExportButton.Visibility = RescanButton.Visibility;
         IssuesNavItem.Visibility = State.ErrorCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         IssuesBadge.Value = State.ErrorCount;
+        BasketBadge.Value = State.Basket.Count;
+        BasketBadge.Visibility = State.Basket.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ---------------------------------------------------------------------------------------------
