@@ -382,7 +382,7 @@ public sealed partial class AppState : ObservableObject
             await Task.Run(() =>
             {
                 DriveService.FillVolumeMetadata(tree);
-                SnapshotStore.Save(tree);
+                SnapshotStore.SaveScan(tree);
             });
         }
 

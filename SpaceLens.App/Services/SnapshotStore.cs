@@ -24,6 +24,9 @@ public static class SnapshotStore
         return Path.Combine(Folder, safe + ".slsnap");
     }
 
+    /// <summary>The scan before the current one, kept so the Changes page can compare the two.</summary>
+    public static string PreviousPathFor(string root) => Path.ChangeExtension(PathFor(root), ".prev.slsnap");
+
     private static uint StableHash(string text)
     {
         uint hash = 2166136261;
@@ -50,17 +53,59 @@ public static class SnapshotStore
         }
     }
 
-    public static void Save(ScanTree tree)
+    public static ScanTree? TryLoadPrevious(string root)
+    {
+        try
+        {
+            string path = PreviousPathFor(root);
+            return File.Exists(path) ? SnapshotSerializer.LoadFromFile(path) : null;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or EndOfStreamException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Saves a newly completed scan. The snapshot it replaces becomes the previous scan. Saves after
+    /// removals use <see cref="Save"/> instead, which keeps the previous scan as it is.
+    /// </summary>
+    public static void SaveScan(ScanTree tree)
     {
         lock (SaveGate)
         {
             try
             {
-                SnapshotSerializer.SaveToFile(tree, PathFor(tree.RootPath));
+                string current = PathFor(tree.RootPath);
+                if (File.Exists(current))
+                {
+                    File.Move(current, PreviousPathFor(tree.RootPath), overwrite: true);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
             }
+
+            SaveCore(tree);
+        }
+    }
+
+    public static void Save(ScanTree tree)
+    {
+        lock (SaveGate)
+        {
+            SaveCore(tree);
+        }
+    }
+
+    private static void SaveCore(ScanTree tree)
+    {
+        try
+        {
+            SnapshotSerializer.SaveToFile(tree, PathFor(tree.RootPath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
         }
     }
 

@@ -59,6 +59,9 @@
                 <NavigationViewItem Content="Large Files" Tag="largefiles" AccessKey="L">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE7C3;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Changes" Tag="changes" AccessKey="C">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE81C;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="File Types" Tag="filetypes" AccessKey="T">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xEB05;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>

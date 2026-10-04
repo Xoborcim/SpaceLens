@@ -55,6 +55,11 @@ folder names (`node_modules`, `.git`) and size filters (`>5GB`).
   `%LOCALAPPDATA%\SpaceLens\Snapshots`, so the next start shows
   "Last scanned … [Rescan]" without rescanning. The snapshot also records the
   volume's USN journal position, ready for a future incremental scan.
+- The snapshot a new scan replaces is kept as the previous scan. The Changes
+  page compares the two (`ScanComparer`): folders are matched by name level by
+  level, and the difference is explained by a short list of the folders that
+  grew, shrank, appeared or disappeared, drilling down to the folder that
+  actually changed. The previous scan is only loaded while comparing.
 
 ## Safety rules
 
