@@ -295,6 +295,63 @@ public static class ItemActions
         return false;
     }
 
+    /// <summary>
+    /// Marks a cloud-synced file or folder online-only (File Explorer's "Free up space"). Nothing is deleted:
+    /// the provider removes the local copy in the background and downloads it again when it is opened.
+    /// Afterwards the folder is rescanned so the freed space shows up.
+    /// </summary>
+    public static async Task FreeUpSpaceAsync(EntryItem item)
+    {
+        if (item.Kind is not (EntryKind.Directory or EntryKind.File) || item.Tree is not { } tree || tree != State.Tree || !State.CanModify)
+        {
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "Free up space?",
+            Content = new TextBlock
+            {
+                Text = $"{item.Path}\n\nThe {(item.IsDirectory ? "files in this folder stay" : "file stays")} in the cloud and {(item.IsDirectory ? "are" : "is")} downloaded again when opened, " +
+                       "but will not be available without an internet connection. This is the same as \"Free up space\" in File Explorer; nothing is deleted.",
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 480,
+            },
+            PrimaryButtonText = "Free up space",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = State.XamlRoot,
+        };
+
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        string path = item.Path;
+        FreeUpResult result;
+        try
+        {
+            result = await Task.Run(() => CloudFiles.FreeUpSpace(path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await ShowMessageAsync("Space was not freed", ex.Message);
+            return;
+        }
+
+        State.StatusDetail = $"{SizeFormatter.FormatCount(result.Changed)} files set to online-only; the cloud provider frees the space in the background" +
+            (result.Failed > 0 ? $"  ·  {SizeFormatter.FormatCount(result.Failed)} items could not be changed" : "");
+
+        // Give the provider a moment, then measure again.
+        int folder = item.IsDirectory ? item.Index : tree.File(item.Index).Directory;
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (folder != Core.Models.ScanTree.RootIndex && tree == State.Tree && tree.IsLiveDirectory(folder))
+        {
+            await State.RescanFolderAsync(tree, folder);
+        }
+    }
+
     /// <summary>Explains why SpaceLens will not delete an item and offers the legitimate alternative, if any.</summary>
     public static async Task ShowProtectedAsync(EntryItem item)
     {
@@ -445,6 +502,11 @@ public static class ItemActions
             if (app is not null)
             {
                 Add($"Uninstall {app.Name}…", "\uE74D", () => State.RequestNavigation("apps", app), enabled: State.CanModify);
+            }
+
+            if (item.Kind is EntryKind.Directory or EntryKind.File && !item.IsReparsePoint && CloudFiles.IsInSyncRoot(item.Path))
+            {
+                Add("Free up space (online-only)", "\uE753", () => _ = FreeUpSpaceAsync(item), enabled: State.CanModify);
             }
 
             if (item.Finding?.ActionUri is { } uri && item.Finding.ActionLabel is { } label && !uri.StartsWith("spacelens:", StringComparison.Ordinal))

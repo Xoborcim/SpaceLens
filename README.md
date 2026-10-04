@@ -32,6 +32,11 @@ dotnet publish SpaceLens.App -c Release -o publish\SpaceLens
 add "Analyze with SpaceLens" to File Explorer's right-click menu for folders
 and drives.
 
+For files in OneDrive (or another provider using the Windows Cloud Files API),
+the context menu offers "Free up space (online-only)": like the File Explorer
+command of the same name, the files stay in the cloud and only the local copy
+is removed by the provider. Nothing is deleted.
+
 Right-click a folder and choose "Rescan this folder" to update just that folder
 in the results instead of rescanning the whole drive.
 

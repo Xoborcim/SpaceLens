@@ -194,3 +194,26 @@ public class NativeLayoutTests
     public void By_handle_file_information_matches_the_native_layout() =>
         Assert.Equal(52, System.Runtime.InteropServices.Marshal.SizeOf<SpaceLens.Windows.Native.NativeMethods.ByHandleFileInformation>());
 }
+
+public class CloudFilesTests
+{
+    [Theory]
+    [InlineData(0x9000001Au, true)]
+    [InlineData(0x9000101Au, true)]
+    [InlineData(0x9000F01Au, true)]
+    [InlineData(0xA0000003u, false)] // mount point / junction
+    [InlineData(0xA000000Cu, false)] // symbolic link
+    [InlineData(0x80000017u, false)] // WOF compressed
+    [InlineData(0u, false)]
+    public void Recognizes_cloud_reparse_tags(uint tag, bool expected) =>
+        Assert.Equal(expected, SpaceLens.Windows.FileSystem.CloudFiles.IsCloudTag(tag));
+
+    [Fact]
+    public void Free_up_space_sets_unpinned_and_clears_pinned()
+    {
+        var pinned = FileAttributes.Archive | SpaceLens.Windows.FileSystem.CloudFiles.Pinned;
+        var result = SpaceLens.Windows.FileSystem.CloudFiles.OnlineOnly(pinned);
+        Assert.Equal(FileAttributes.Archive | SpaceLens.Windows.FileSystem.CloudFiles.Unpinned, result);
+        Assert.Equal(8, System.Runtime.InteropServices.Marshal.SizeOf<SpaceLens.Windows.Native.NativeMethods.FileAttributeTagInformation>());
+    }
+}

@@ -49,6 +49,19 @@ internal static unsafe partial class NativeMethods
 
     public const uint FILE_READ_ATTRIBUTES = 0x0080;
 
+    /// <summary>Open the reparse point itself: never follows a link and never recalls a cloud file.</summary>
+    public const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+
+    /// <summary>FILE_INFO_BY_HANDLE_CLASS.FileAttributeTagInfo: FILE_ATTRIBUTE_TAG_INFO { FileAttributes, ReparseTag }.</summary>
+    public const int FileAttributeTagInfo = 9;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FileAttributeTagInformation
+    {
+        public uint FileAttributes;
+        public uint ReparseTag;
+    }
+
     /// <summary>BY_HANDLE_FILE_INFORMATION: https://learn.microsoft.com/windows/win32/api/fileapi/ns-fileapi-by_handle_file_information</summary>
     /// FILETIME members are pairs of DWORDs, so the structure is 4-byte aligned (52 bytes).
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
