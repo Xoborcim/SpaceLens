@@ -762,13 +762,18 @@ public sealed partial class AppState : ObservableObject
     // Mutation
     // ---------------------------------------------------------------------------------------------
 
-    public void RemoveFromTree(bool isFile, int index) => RemoveFromTree([(isFile, index)]);
+    public void RemoveFromTree(ScanTree tree, bool isFile, int index) => RemoveFromTree(tree, [(isFile, index)]);
 
-    /// <summary>Removes items that no longer exist on disk, then re-analyzes and re-saves once.</summary>
-    public void RemoveFromTree(IEnumerable<(bool IsFile, int Index)> items)
+    /// <summary>
+    /// Removes items that no longer exist on disk, then re-analyzes and re-saves once.
+    /// <paramref name="tree"/> is the tree the indices came from. Removals finish asynchronously (Recycle
+    /// Bin, uninstallers), and a rescan may have replaced the tree in the meantime: indices from the old
+    /// tree mean nothing in the new one, and a tree being scanned must not be modified. In both cases the
+    /// removal is skipped; the new scan already reflects the disk.
+    /// </summary>
+    public void RemoveFromTree(ScanTree tree, IEnumerable<(bool IsFile, int Index)> items)
     {
-        var tree = Tree;
-        if (tree is null)
+        if (tree != Tree || IsScanning)
         {
             return;
         }

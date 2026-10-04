@@ -266,6 +266,8 @@ public sealed partial class AppsPage : Page
             return;
         }
 
+        // The uninstaller can run for minutes, and a rescan may replace the tree meanwhile.
+        var tree = State.Tree;
         string how = app.Source == AppSource.Msix
             ? "Windows will remove this app package and its local data."
             : quiet
@@ -342,12 +344,12 @@ public sealed partial class AppsPage : Page
             return;
         }
 
-        OnUninstalled(app);
+        OnUninstalled(app, tree);
     }
 
-    private void OnUninstalled(InstalledApp app)
+    private void OnUninstalled(InstalledApp app, ScanTree? tree)
     {
-        int dir = FindInTree(app);
+        int dir = app.InstallLocation is not null && tree is not null ? tree.FindDirectory(app.InstallLocation) : -1;
         string message = $"{app.Name} was uninstalled.";
         if (app.InstallLocation is { } location && Directory.Exists(location))
         {
@@ -355,7 +357,7 @@ public sealed partial class AppsPage : Page
         }
         else if (dir > 0)
         {
-            State.RemoveFromTree(false, dir);
+            State.RemoveFromTree(tree!, false, dir);
         }
 
         State.RemoveApp(app);

@@ -35,7 +35,7 @@ Delete shows the Recycle Bin confirmation (it never deletes without one), and
 Shift+F10 or the context-menu key shows the actions for the selected item.
 
 Search accepts plain text (`steam`), wildcards (`*.vmdk`), extensions (`.iso`),
-folder names (`node_modules`) and size filters (`>5GB`).
+folder names (`node_modules`, `.git`) and size filters (`>5GB`).
 
 ## Architecture
 
@@ -62,9 +62,13 @@ folder names (`node_modules`) and size filters (`>5GB`).
   WinSxS, boot files, and EFI/recovery partitions are protected and can
   never be removed from SpaceLens. Other Windows-managed locations show
   "Managed by Windows" and point to the Windows tool that manages them.
+- Other users' profiles, the Public folder and the Default profile are
+  protected like your own profile; their contents can be reviewed individually.
 - Every removal asks for confirmation, and Cancel is the default button.
   Removal goes to the Recycle Bin. Permanent deletion is a separate action,
-  for files only, and requires ticking an acknowledgement box.
+  for files only, and requires ticking an acknowledgement box. On drives
+  without a Recycle Bin (removable and network drives) the confirmation says
+  that the removal is permanent and requires the same acknowledgement.
 - Installed apps are removed only through their official uninstaller, which is
   interactive by default. A quiet uninstall is offered only when the app
   provides one, and it is never the default. Install folders are never

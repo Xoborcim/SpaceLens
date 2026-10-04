@@ -8,6 +8,10 @@ public static class SnapshotStore
 {
     private static string Folder => Path.Combine(SettingsService.DataDirectory, "Snapshots");
 
+    // Saves run on background threads (after a scan and after every removal). One at a time: each save
+    // reads the tree when it starts, so whichever runs last writes the newest state.
+    private static readonly Lock SaveGate = new();
+
     public static string PathFor(string root)
     {
         string normalized = PathUtil.NormalizeDisplayPath(root).ToUpperInvariant();
@@ -48,16 +52,27 @@ public static class SnapshotStore
 
     public static void Save(ScanTree tree)
     {
-        try
+        lock (SaveGate)
         {
-            SnapshotSerializer.SaveToFile(tree, PathFor(tree.RootPath));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
+            try
+            {
+                SnapshotSerializer.SaveToFile(tree, PathFor(tree.RootPath));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
         }
     }
 
     public static void DeleteAll()
+    {
+        lock (SaveGate)
+        {
+            DeleteAllCore();
+        }
+    }
+
+    private static void DeleteAllCore()
     {
         try
         {
