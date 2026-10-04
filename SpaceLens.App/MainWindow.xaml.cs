@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window
         ["folders"] = typeof(FoldersPage),
         ["largefiles"] = typeof(LargeFilesPage),
         ["changes"] = typeof(ChangesPage),
+        ["duplicates"] = typeof(DuplicatesPage),
         ["filetypes"] = typeof(FileTypesPage),
         ["storage"] = typeof(StoragePage),
         ["developer"] = typeof(DevFilesPage),

@@ -62,6 +62,12 @@ Large Files can also be limited to files not modified in 6 months to 5 years.
   level, and the difference is explained by a short list of the folders that
   grew, shrank, appeared or disappeared, drilling down to the folder that
   actually changed. The previous scan is only loaded while comparing.
+- Duplicates (`DuplicateFinder`) runs only when asked, because it reads file
+  contents. Indexed files are grouped by size, hard links are collapsed (same
+  volume and file ID), then the first and last 64 KB are hashed, and only
+  files that still match are hashed completely (SHA-256). Online-only cloud
+  files are never read, since that would download them, and C:\Windows is
+  skipped. Copies are removed through the normal Recycle Bin confirmation.
 
 ## Safety rules
 

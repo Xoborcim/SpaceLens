@@ -62,6 +62,9 @@
                 <NavigationViewItem Content="Changes" Tag="changes" AccessKey="C">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE81C;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Duplicates" Tag="duplicates" AccessKey="U">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8C8;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="File Types" Tag="filetypes" AccessKey="T">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xEB05;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
