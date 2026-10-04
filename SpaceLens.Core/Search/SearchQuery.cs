@@ -8,7 +8,7 @@ namespace SpaceLens.Core.Search;
 /// Parsed search expression. Whitespace-separated terms are combined with AND:
 /// <list type="bullet">
 /// <item><c>steam</c> – name contains "steam"</item>
-/// <item><c>.iso</c> – files with extension .iso</item>
+/// <item><c>.iso</c> – files with extension .iso, and folders named exactly ".iso" (so <c>.git</c> finds .git folders)</item>
 /// <item><c>*.vmdk</c>, <c>backup_??.zip</c> – wildcard match on the name</item>
 /// <item><c>&gt;5GB</c>, <c>&lt;100MB</c>, <c>&gt;=1g</c> – size filters</item>
 /// <item><c>type:video</c> – file category</item>
@@ -30,8 +30,8 @@ public sealed class SearchQuery
         _contains.Count == 0 && _wildcards.Count == 0 && _extensions.Count == 0 && _categories.Count == 0 &&
         MinSize == long.MinValue && MaxSize == long.MaxValue;
 
-    /// <summary>Extension and category filters only match files.</summary>
-    public bool FilesOnly => _extensions.Count > 0 || _categories.Count > 0;
+    /// <summary>Category filters only match files.</summary>
+    public bool FilesOnly => _categories.Count > 0;
 
     public static SearchQuery Parse(string? text)
     {
@@ -142,9 +142,10 @@ public sealed class SearchQuery
             }
         }
 
+        // ".git" means files ending in .git, or a folder named exactly ".git".
         foreach (var e in _extensions)
         {
-            if (!name.EndsWith(e, StringComparison.OrdinalIgnoreCase))
+            if (isFile ? !name.EndsWith(e, StringComparison.OrdinalIgnoreCase) : !name.Equals(e, StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }

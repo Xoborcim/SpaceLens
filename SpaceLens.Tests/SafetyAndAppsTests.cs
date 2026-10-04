@@ -10,7 +10,7 @@ namespace SpaceLens.Tests;
 
 public class SafetyPolicyTests
 {
-    private static readonly KnownLocations Known = new()
+    internal static readonly KnownLocations Known = new()
     {
         SystemDrive = @"C:\",
         WindowsDirectory = @"C:\Windows",
@@ -97,6 +97,43 @@ public class SafetyPolicyTests
         Assert.Equal(ProtectionLevel.None, _policy.AssessFile(@"C:\Users\me\Downloads\ubuntu.iso").Level);
         Assert.Equal(ProtectionLevel.None, _policy.AssessFile(@"D:\movie.mkv").Level);
     }
+
+    [Theory]
+    [InlineData(@"C:\Users\Public")]
+    [InlineData(@"C:\Users\Public\Documents")]
+    [InlineData(@"C:\Users\Default")]
+    [InlineData(@"C:\Users\Default\AppData\Local")]
+    [InlineData(@"C:\Users\bob")]
+    [InlineData(@"C:\Users\bob\AppData")]
+    [InlineData(@"C:\Users\bob\Documents")]
+    public void Other_profiles_are_protected(string path) =>
+        Assert.False(_policy.AssessDirectory(path).CanDelete, path);
+
+    [Fact]
+    public void Content_of_other_profiles_is_reviewed_individually()
+    {
+        Assert.Equal(ProtectionLevel.Caution, _policy.AssessDirectory(@"C:\Users\bob\AppData\Local\SomeApp").Level);
+        Assert.Equal(ProtectionLevel.None, _policy.AssessDirectory(@"C:\Users\bob\Downloads\old-stuff").Level);
+        Assert.Equal(ProtectionLevel.None, _policy.AssessDirectory(@"C:\Users\Public\Documents\Shared project").Level);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\me\AppData\Local\IconCache.db")]
+    [InlineData(@"C:\Users\me\AppData\Roaming\settings.dat")]
+    [InlineData(@"C:\Users\me\.gitconfig")]
+    [InlineData(@"C:\ProgramData\vendor.dat")]
+    [InlineData(@"C:\Users\bob\NTUSER.DAT")]
+    [InlineData(@"C:\Users\me\AppData\Local\Temp\setup.log")]
+    public void Loose_files_in_settings_folders_need_caution(string path) =>
+        Assert.Equal(ProtectionLevel.Caution, _policy.AssessFile(path).Level);
+
+    [Theory]
+    [InlineData(@"C:\Users\me\Downloads\ubuntu.iso")]
+    [InlineData(@"C:\Users\me\Documents\report.docx")]
+    [InlineData(@"C:\Users\Public\shared.zip")]
+    [InlineData(@"C:\big.bin")]
+    public void Loose_files_in_document_folders_stay_ordinary(string path) =>
+        Assert.Equal(ProtectionLevel.None, _policy.AssessFile(path).Level);
 
     [Fact]
     public void Hiberfil_advice_mentions_powercfg()
@@ -291,6 +328,54 @@ public class DetectorTests
         Assert.DoesNotContain(findings, f => f.Path.Contains("photos", StringComparison.OrdinalIgnoreCase));
         Assert.All(findings, f => Assert.Equal(LocationCategory.Developer, f.Category));
         Assert.True(findings.Single(f => f.Group == "node_modules").Size >= 3 << 20);
+    }
+
+    [Fact]
+    public void Developer_detector_skips_node_modules_that_are_not_projects()
+    {
+        // D:\
+        //   web\package.json + node_modules             a project: reported
+        //   loose\node_modules                          no package.json: not reinstallable
+        //   App\resources\app\package.json + node_modules  Electron application bundle
+        //   Program Files\Tool\package.json + node_modules  installed program
+        //   SteamLibrary\steamapps\common\Game\...       installed game
+        var tree = new ScanTree(@"D:\");
+        var markers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        int AddNodeModules(int parent, bool withPackageJson)
+        {
+            int modules = tree.AddDirectory(parent, "node_modules");
+            int inner = tree.AddDirectory(modules, "some-package");
+            tree.CompleteDirectory(inner, 2 << 20, 3, 0);
+            if (withPackageJson)
+            {
+                markers.Add(tree.GetPath(parent) + @"\package.json");
+                markers.Add(tree.GetPath(inner) + @"\package.json");
+            }
+
+            return modules;
+        }
+
+        int Dir(int parent, string name) => tree.AddDirectory(parent, name);
+
+        int project = AddNodeModules(Dir(ScanTree.RootIndex, "web"), withPackageJson: true);
+        AddNodeModules(Dir(ScanTree.RootIndex, "loose"), withPackageJson: false);
+        AddNodeModules(Dir(Dir(Dir(ScanTree.RootIndex, "App"), "resources"), "app"), withPackageJson: true);
+        AddNodeModules(Dir(Dir(ScanTree.RootIndex, "Program Files"), "Tool"), withPackageJson: true);
+        AddNodeModules(Dir(Dir(Dir(Dir(ScanTree.RootIndex, "SteamLibrary"), "steamapps"), "common"), "Game"), withPackageJson: true);
+
+        var context = new DetectionContext
+        {
+            Tree = tree,
+            Known = SafetyPolicyTests.Known,
+            FileExists = p => markers.Contains(p.Replace('/', '\\')),
+            DirectoryExists = _ => false,
+        };
+        var findings = new DeveloperFilesDetector().Detect(context, CancellationToken.None).ToList();
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("node_modules", finding.Group);
+        Assert.Equal(project, finding.DirectoryIndex);
     }
 
     [Fact]

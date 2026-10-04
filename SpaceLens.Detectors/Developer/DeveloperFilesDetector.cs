@@ -40,6 +40,21 @@ public sealed class DeveloperFilesDetector : DetectorBase
         ".next", ".nuxt", ".svelte-kit", ".turbo", ".parcel-cache", ".angular", ".expo", ".vite",
     };
 
+    /// <summary>
+    /// Folders whose contents are installed applications or games, on any drive. Bundled node_modules,
+    /// bin or Python folders in there belong to the application and cannot be recreated by a build.
+    /// </summary>
+    private static readonly HashSet<string> InstalledContentNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "steamapps", "WindowsApps", "XboxGames", "Epic Games", "GOG Games",
+    };
+
+    /// <summary>The same, but only directly at a drive root (D:\Program Files and so on).</summary>
+    private static readonly HashSet<string> InstalledContentRootNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Program Files", "Program Files (x86)", "ProgramData", "Windows",
+    };
+
     private static readonly HashSet<string> MarkerNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "node_modules", "target", "bin", "obj", "dist", "build", "out", ".gradle", ".venv", "venv", "env", "__pycache__",
@@ -70,6 +85,7 @@ public sealed class DeveloperFilesDetector : DetectorBase
         }
 
         int profileIndex = Find(context, context.Known.UserProfile);
+        bool rootIsDrive = tree.RootPath.Length == 3;
 
         TreeWalker.Walk(tree, ScanTree.RootIndex, d =>
         {
@@ -84,12 +100,13 @@ public sealed class DeveloperFilesDetector : DetectorBase
                 return false;
             }
 
-            if (tree.Dir(d).Name.Equals("$Recycle.Bin", StringComparison.OrdinalIgnoreCase))
+            string name = tree.Dir(d).Name;
+            if (name.Equals("$Recycle.Bin", StringComparison.OrdinalIgnoreCase) || InstalledContentNames.Contains(name) ||
+                rootIsDrive && tree.Dir(d).Parent == ScanTree.RootIndex && InstalledContentRootNames.Contains(name))
             {
                 return false;
             }
 
-            string name = tree.Dir(d).Name;
             if (!MarkerNames.Contains(name) && !JsBuildNames.Contains(name))
             {
                 return true;
@@ -98,7 +115,9 @@ public sealed class DeveloperFilesDetector : DetectorBase
             var (group, title) = Classify(context, d, name);
             if (group is null)
             {
-                return true;
+                // Packages inside a node_modules that is not a project's each carry a package.json of
+                // their own; never look for artifacts in there.
+                return !name.Equals("node_modules", StringComparison.OrdinalIgnoreCase);
             }
 
             var finding = DirectoryFinding(context, d, group, title, StorageNature.DeveloperArtifact, LocationCategory.Developer,
@@ -149,7 +168,9 @@ public sealed class DeveloperFilesDetector : DetectorBase
         switch (name.ToLowerInvariant())
         {
             case "node_modules":
-                return ("node_modules", null);
+                // Only a project's packages can be reinstalled: they sit next to its package.json. Electron
+                // applications ship a package.json too, inside resources\app (or app.asar.unpacked).
+                return Has("package.json") && !IsElectronBundle(tree, parent) ? ("node_modules", null) : (null, null);
             case "__pycache__":
                 return ("Python bytecode caches", null);
             case ".venv":
@@ -253,6 +274,15 @@ public sealed class DeveloperFilesDetector : DetectorBase
         }
 
         return false;
+    }
+
+    private static bool IsElectronBundle(ScanTree tree, int dir)
+    {
+        string name = tree.Dir(dir).Name;
+        int parent = tree.Dir(dir).Parent;
+        return parent >= 0 &&
+               (name.Equals("app", StringComparison.OrdinalIgnoreCase) || name.Equals("app.asar.unpacked", StringComparison.OrdinalIgnoreCase)) &&
+               tree.Dir(parent).Name.Equals("resources", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string DescribeWslDisk(string folder)

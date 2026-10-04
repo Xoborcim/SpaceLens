@@ -74,6 +74,12 @@ public sealed class ScanTree
 
     public int ErrorCount => Volatile.Read(ref _errorCount);
 
+    /// <summary>
+    /// Taken by removals and by readers that need a consistent view of a finished tree (snapshot saves),
+    /// so a save never sees a half-applied removal.
+    /// </summary>
+    public Lock SyncRoot { get; } = new();
+
     public IReadOnlyCollection<ScanError> Errors => _errors;
 
     /// <summary>The directory most recently started by a worker (for progress display).</summary>
@@ -385,6 +391,14 @@ public sealed class ScanTree
 
     public void RemoveFile(int fileIndex)
     {
+        lock (SyncRoot)
+        {
+            RemoveFileCore(fileIndex);
+        }
+    }
+
+    private void RemoveFileCore(int fileIndex)
+    {
         ref var file = ref _files[fileIndex];
         if (file.Removed)
         {
@@ -412,6 +426,15 @@ public sealed class ScanTree
         {
             throw new InvalidOperationException("The scan root cannot be removed.");
         }
+
+        lock (SyncRoot)
+        {
+            RemoveDirectoryCore(dirIndex);
+        }
+    }
+
+    private void RemoveDirectoryCore(int dirIndex)
+    {
 
         ref var node = ref _dirs[dirIndex];
         if (node.IsRemoved)

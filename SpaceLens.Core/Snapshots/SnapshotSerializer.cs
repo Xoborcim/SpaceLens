@@ -16,6 +16,10 @@ public static class SnapshotSerializer
 
     public static void Save(ScanTree tree, Stream destination)
     {
+        // Copy everything first while holding the tree's lock, so a removal made from the UI while the
+        // (slow) compression runs cannot leave the file with counts that do not match its records.
+        var capture = Capture(tree);
+
         using var compressor = new BrotliStream(destination, CompressionLevel.Fastest, leaveOpen: true);
         using var writer = new BinaryWriter(compressor, Encoding.UTF8, leaveOpen: true);
 
@@ -40,16 +44,14 @@ public static class SnapshotSerializer
 
         for (int i = 0; i < FileCategoryInfo.Count; i++)
         {
-            writer.Write(tree.CategoryBytes[i]);
-            writer.Write(tree.CategoryCounts[i]);
+            writer.Write(capture.CategoryBytes[i]);
+            writer.Write(capture.CategoryCounts[i]);
         }
 
         // Directories. Parents always precede children, which lets the loader rebuild links in one pass.
-        int dirCount = tree.DirectoryCount;
-        writer.Write(dirCount);
-        for (int i = 0; i < dirCount; i++)
+        writer.Write(capture.Dirs.Length);
+        foreach (ref readonly var n in capture.Dirs.AsSpan())
         {
-            ref var n = ref tree.Dir(i);
             writer.Write(n.Name ?? "");
             writer.Write(n.Parent);
             writer.Write((ushort)n.Flags);
@@ -58,25 +60,9 @@ public static class SnapshotSerializer
             writer.Write(n.LastWriteUtc);
         }
 
-        int fileCount = tree.FileRecordCount;
-        int liveFiles = 0;
-        for (int i = 0; i < fileCount; i++)
+        writer.Write(capture.Files.Count);
+        foreach (var f in capture.Files)
         {
-            if (!tree.File(i).Removed)
-            {
-                liveFiles++;
-            }
-        }
-
-        writer.Write(liveFiles);
-        for (int i = 0; i < fileCount; i++)
-        {
-            ref var f = ref tree.File(i);
-            if (f.Removed)
-            {
-                continue;
-            }
-
             writer.Write(f.Name);
             writer.Write(f.Directory);
             writer.Write(f.Size);
@@ -85,14 +71,43 @@ public static class SnapshotSerializer
             writer.Write((int)f.Attributes);
         }
 
-        writer.Write(tree.ErrorCount);
-        var errors = tree.Errors.Take(MaxStoredErrors).ToList();
-        writer.Write(errors.Count);
-        foreach (var e in errors)
+        writer.Write(capture.ErrorCount);
+        writer.Write(capture.Errors.Count);
+        foreach (var e in capture.Errors)
         {
             writer.Write(e.Path);
             writer.Write(e.ErrorCode);
             writer.Write(e.Message);
+        }
+    }
+
+    private sealed record SnapshotCapture(
+        DirNode[] Dirs, List<FileRecord> Files, long[] CategoryBytes, long[] CategoryCounts, int ErrorCount, List<ScanError> Errors);
+
+    private static SnapshotCapture Capture(ScanTree tree)
+    {
+        lock (tree.SyncRoot)
+        {
+            var dirs = new DirNode[tree.DirectoryCount];
+            for (int i = 0; i < dirs.Length; i++)
+            {
+                dirs[i] = tree.Dir(i);
+            }
+
+            int fileCount = tree.FileRecordCount;
+            var files = new List<FileRecord>(fileCount);
+            for (int i = 0; i < fileCount; i++)
+            {
+                ref var f = ref tree.File(i);
+                if (!f.Removed)
+                {
+                    files.Add(f);
+                }
+            }
+
+            return new SnapshotCapture(
+                dirs, files, (long[])tree.CategoryBytes.Clone(), (long[])tree.CategoryCounts.Clone(),
+                tree.ErrorCount, tree.Errors.Take(MaxStoredErrors).ToList());
         }
     }
 
@@ -215,12 +230,31 @@ public static class SnapshotSerializer
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temp = path + ".tmp";
-        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16))
+        try
         {
-            Save(tree, stream);
-        }
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16))
+            {
+                Save(tree, stream);
+            }
 
-        File.Move(temp, path, overwrite: true);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            TryDelete(temp);
+            throw;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     public static ScanTree LoadFromFile(string path)

@@ -131,6 +131,53 @@ public class ScanTreeTests
     }
 }
 
+public class SnapshotConcurrencyTests
+{
+    [Fact]
+    public void Saving_while_items_are_removed_always_produces_a_loadable_snapshot()
+    {
+        for (int round = 0; round < 20; round++)
+        {
+            var tree = new ScanTree(@"D:\");
+            var files = new List<int>();
+            var dirs = new List<int>();
+            for (int d = 0; d < 200; d++)
+            {
+                int dir = tree.AddDirectory(ScanTree.RootIndex, $"dir{d}");
+                dirs.Add(dir);
+                for (int f = 0; f < 50; f++)
+                {
+                    files.Add(tree.AddFile(dir, $"file{f}.bin", 2L << 20, FileCategory.Other, 0));
+                }
+
+                tree.CompleteDirectory(dir, 50 * (2L << 20), 50, 0);
+            }
+
+            tree.CompleteDirectory(ScanTree.RootIndex, 0, 0, dirs.Count);
+
+            using var stream = new MemoryStream();
+            var remover = Task.Run(() =>
+            {
+                for (int i = 0; i < files.Count; i += 7)
+                {
+                    tree.RemoveFile(files[i]);
+                }
+
+                for (int i = 0; i < dirs.Count; i += 5)
+                {
+                    tree.RemoveDirectory(dirs[i]);
+                }
+            });
+            SnapshotSerializer.Save(tree, stream);
+            remover.Wait();
+
+            stream.Position = 0;
+            var loaded = SnapshotSerializer.Load(stream);
+            Assert.True(loaded.Root.TotalFiles > 0);
+        }
+    }
+}
+
 public class BreakdownTests
 {
     [Fact]
@@ -308,6 +355,21 @@ public class SearchTests
         var big = SearchEngine.Search(tree, SearchQuery.Parse("> 5GB"));
         Assert.All(big.Hits, h => Assert.True(h.Size > 5L << 30));
         Assert.Equal(big.Hits.OrderByDescending(h => h.Size), big.Hits);
+    }
+
+    [Fact]
+    public void Dot_names_find_folders_with_that_exact_name()
+    {
+        var tree = ScanTreeTests.Sample();
+        int me = tree.FindDirectory(@"C:\Users\me");
+        int git = tree.AddDirectory(me, ".git");
+        tree.AddDirectory(me, "my.git.backup");
+        tree.CompleteDirectory(git, 10L << 20, 3, 0);
+
+        var hit = Assert.Single(SearchEngine.Search(tree, SearchQuery.Parse(".git")).Hits);
+        Assert.False(hit.IsFile);
+        Assert.Equal(git, hit.Index);
+        Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse(".git type:video")).Hits);
     }
 
     [Fact]
