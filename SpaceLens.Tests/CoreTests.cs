@@ -90,6 +90,39 @@ public class ScanTreeTests
     }
 
     [Fact]
+    public void Removing_a_directory_also_removes_its_small_files_from_category_totals()
+    {
+        // D:\a holds 2 MB of small documents, D:\b 6 MB of small images and an indexed 4 MB video.
+        var tree = new ScanTree(@"D:\");
+        int a = tree.AddDirectory(ScanTree.RootIndex, "a");
+        int b = tree.AddDirectory(ScanTree.RootIndex, "b");
+        tree.AddFile(b, "clip.mp4", 4L << 20, FileCategory.Video, 0);
+        tree.CompleteDirectory(a, 2L << 20, 20, 0);
+        tree.CompleteDirectory(b, 10L << 20, 61, 0);
+        tree.CompleteDirectory(ScanTree.RootIndex, 0, 0, 2);
+        tree.AddCategoryTotals(Totals((FileCategory.Document, 2L << 20), (FileCategory.Image, 6L << 20), (FileCategory.Video, 4L << 20)),
+            Totals((FileCategory.Document, 20), (FileCategory.Image, 60), (FileCategory.Video, 1)));
+
+        tree.RemoveDirectory(b);
+
+        Assert.Equal(tree.Root.TotalSize, tree.CategoryBytes.Sum());
+        Assert.Equal(tree.Root.TotalFiles, tree.CategoryCounts.Sum());
+        Assert.Equal(0, tree.CategoryBytes[(int)FileCategory.Video]);
+        Assert.All(tree.CategoryBytes, v => Assert.True(v >= 0));
+    }
+
+    private static long[] Totals(params (FileCategory Category, long Value)[] values)
+    {
+        var totals = new long[FileCategoryInfo.Count];
+        foreach (var (category, value) in values)
+        {
+            totals[(int)category] = value;
+        }
+
+        return totals;
+    }
+
+    [Fact]
     public void Removing_a_directory_detaches_its_subtree()
     {
         var tree = Sample();
@@ -127,7 +160,7 @@ public class ScanTreeTests
         Assert.True(loaded.FindDirectory(@"C:\Users\me\Downloads") > 0);
         Assert.Equal(1, loaded.ErrorCount);
         Assert.Equal(@"C:\System Volume Information", loaded.Errors.Single().Path);
-        Assert.Equal(8L << 30, loaded.TopFiles.Snapshot()[0].Key);
+        Assert.Equal(8L << 30, loaded.File(Breakdown.LargeFiles(loaded, 0)[0]).Size);
     }
 }
 
@@ -312,6 +345,10 @@ public class SizeFormatterTests
     [Theory]
     [InlineData("5GB", 5L << 30)]
     [InlineData("1.5 gb", 3L << 29)]
+    [InlineData("1,5 GB", 3L << 29)]
+    [InlineData("1,000MB", 1000L << 20)]
+    [InlineData("1,000.5 KB", 1_024_512)]
+    [InlineData("2PB", 2L << 50)]
     [InlineData("500MB", 500L << 20)]
     [InlineData("100k", 100L << 10)]
     [InlineData("42", 42L)]
@@ -326,6 +363,9 @@ public class SizeFormatterTests
     [InlineData("")]
     [InlineData("GB")]
     [InlineData("5 parsecs")]
+    [InlineData("1,5.5GB")]
+    [InlineData("1,000,5GB")]
+    [InlineData("99999999PB")]
     public void Rejects_invalid_sizes(string text) => Assert.False(SizeFormatter.TryParse(text, out _));
 }
 
@@ -379,6 +419,8 @@ public class SearchTests
         Assert.Equal("movie.mkv", tree.File(SearchEngine.Search(tree, SearchQuery.Parse("type:video")).Hits.Single().Index).Name);
         Assert.True(SearchQuery.Parse("").IsEmpty);
         Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse("\"not here\"")).Hits);
+        Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse("type:video type:nonsense")).Hits);
+        Assert.Single(SearchEngine.Search(tree, SearchQuery.Parse("type:video type:diskimage")).Hits, h => h.IsFile && tree.File(h.Index).Name == "movie.mkv");
     }
 }
 

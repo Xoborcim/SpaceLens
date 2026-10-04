@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using SpaceLens.Core.Aggregation;
 
 namespace SpaceLens.Core.Models;
 
@@ -22,7 +21,6 @@ public sealed class ScanTree
 {
     public const int RootIndex = 0;
     public const long DefaultFileIndexThreshold = 1L << 20; // 1 MB
-    public const int TopFileCapacity = 1000;
 
     private readonly ChunkedArray<DirNode> _dirs = new();
     private readonly ChunkedArray<FileRecord> _files = new();
@@ -58,9 +56,6 @@ public sealed class ScanTree
     public long[] CategoryBytes { get; } = new long[FileCategoryInfo.Count];
 
     public long[] CategoryCounts { get; } = new long[FileCategoryInfo.Count];
-
-    /// <summary>Largest indexed files, maintained incrementally during the scan.</summary>
-    public ConcurrentTopN<int> TopFiles { get; } = new(TopFileCapacity);
 
     public int DirectoryCount => _dirs.Count;
 
@@ -145,7 +140,6 @@ public sealed class ScanTree
         file.NextFile = dir.FirstFile;
         Volatile.Write(ref file.Name, name);
         Volatile.Write(ref dir.FirstFile, index);
-        TopFiles.Offer(size, index);
         return index;
     }
 
@@ -435,7 +429,6 @@ public sealed class ScanTree
 
     private void RemoveDirectoryCore(int dirIndex)
     {
-
         ref var node = ref _dirs[dirIndex];
         if (node.IsRemoved)
         {
@@ -448,6 +441,8 @@ public sealed class ScanTree
 
         // Mark the subtree removed so flat iteration (search, detectors) skips it, and subtract the
         // known category contribution of indexed files.
+        long indexedBytes = 0;
+        long indexedFiles = 0;
         var stack = new Stack<int>();
         stack.Push(dirIndex);
         while (stack.Count > 0)
@@ -462,6 +457,8 @@ public sealed class ScanTree
                     file.Removed = true;
                     CategoryBytes[(int)file.Category] -= file.Size;
                     CategoryCounts[(int)file.Category]--;
+                    indexedBytes += file.Size;
+                    indexedFiles++;
                 }
             }
 
@@ -470,6 +467,8 @@ public sealed class ScanTree
                 stack.Push(c);
             }
         }
+
+        SubtractUnindexed(size - indexedBytes, files - indexedFiles);
 
         int parent = node.Parent;
         _dirs[parent].SubdirCount--;
@@ -481,6 +480,74 @@ public sealed class ScanTree
         }
 
         Unlink(ref _dirs[parent].FirstChild, dirIndex, static (tree, i) => ref tree._dirs[i].NextSibling);
+    }
+
+    /// <summary>
+    /// Removes the small (unindexed) files of a removed folder from the category totals. Their types
+    /// were never recorded, so the amount is spread over the categories in proportion to the small
+    /// files that remain in the tree. Per category this is an estimate, but the category totals keep
+    /// adding up to the size of the tree instead of overstating it after every removal.
+    /// </summary>
+    private void SubtractUnindexed(long bytes, long files)
+    {
+        if (bytes <= 0 && files <= 0)
+        {
+            return;
+        }
+
+        // What each category holds in small files: its total minus its live indexed files.
+        var smallBytes = (long[])CategoryBytes.Clone();
+        var smallCounts = (long[])CategoryCounts.Clone();
+        int fileCount = _files.Count;
+        for (int i = 0; i < fileCount; i++)
+        {
+            ref var f = ref _files[i];
+            if (!f.Removed)
+            {
+                smallBytes[(int)f.Category] -= f.Size;
+                smallCounts[(int)f.Category]--;
+            }
+        }
+
+        SubtractProportionally(CategoryBytes, smallBytes, bytes);
+        SubtractProportionally(CategoryCounts, smallCounts, files);
+    }
+
+    private static void SubtractProportionally(long[] totals, long[] weights, long amount)
+    {
+        double weightSum = 0;
+        int largest = -1;
+        for (int i = 0; i < weights.Length; i++)
+        {
+            if (weights[i] > 0)
+            {
+                weightSum += weights[i];
+                if (largest < 0 || weights[i] > weights[largest])
+                {
+                    largest = i;
+                }
+            }
+        }
+
+        if (amount <= 0 || largest < 0)
+        {
+            return;
+        }
+
+        long remaining = Math.Min(amount, (long)weightSum);
+        long target = remaining;
+        for (int i = 0; i < weights.Length && remaining > 0; i++)
+        {
+            if (weights[i] > 0 && i != largest)
+            {
+                long share = Math.Min(weights[i], Math.Min(remaining, (long)(target * (weights[i] / weightSum))));
+                totals[i] -= share;
+                remaining -= share;
+            }
+        }
+
+        // Rounding leftovers go to the largest category, which can absorb them.
+        totals[largest] -= Math.Min(remaining, weights[largest]);
     }
 
     private delegate ref int NextAccessor(ScanTree tree, int index);

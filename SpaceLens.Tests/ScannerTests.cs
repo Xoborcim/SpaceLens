@@ -63,8 +63,8 @@ public class ScannerTests
         Assert.Equal(100, tree.GetUnindexedOwnSize(ScanTree.RootIndex, out int unindexed));
         Assert.Equal(1, unindexed);
 
-        var top = tree.TopFiles.Snapshot();
-        Assert.Equal("large.mp4", tree.File(top[0].Value).Name);
+        var largest = SpaceLens.Core.Aggregation.Breakdown.LargeFiles(tree, 0);
+        Assert.Equal("large.mp4", tree.File(largest[0]).Name);
     }
 
     [Theory]

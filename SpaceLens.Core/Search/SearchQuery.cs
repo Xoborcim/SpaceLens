@@ -11,7 +11,7 @@ namespace SpaceLens.Core.Search;
 /// <item><c>.iso</c> – files with extension .iso, and folders named exactly ".iso" (so <c>.git</c> finds .git folders)</item>
 /// <item><c>*.vmdk</c>, <c>backup_??.zip</c> – wildcard match on the name</item>
 /// <item><c>&gt;5GB</c>, <c>&lt;100MB</c>, <c>&gt;=1g</c> – size filters</item>
-/// <item><c>type:video</c> – file category</item>
+/// <item><c>type:video</c> – file category (several <c>type:</c> terms match any of the categories)</item>
 /// <item><c>"two words"</c> – quoted substring</item>
 /// </list>
 /// </summary>
@@ -84,6 +84,7 @@ public sealed class SearchQuery
         if (term.StartsWith("type:", StringComparison.OrdinalIgnoreCase) || term.StartsWith("kind:", StringComparison.OrdinalIgnoreCase))
         {
             string wanted = term[5..];
+            bool matched = false;
             foreach (var category in FileCategoryInfo.All)
             {
                 if (FileCategoryInfo.DisplayName(category).Contains(wanted, StringComparison.OrdinalIgnoreCase) ||
@@ -91,10 +92,13 @@ public sealed class SearchQuery
                     category.ToString().Contains(wanted, StringComparison.OrdinalIgnoreCase))
                 {
                     _categories.Add(category);
+                    matched = true;
                 }
             }
 
-            if (_categories.Count == 0)
+            // An unknown type matches nothing (the literal "type:xyz" is not part of any file name),
+            // even when another type: term in the same query was recognized.
+            if (!matched)
             {
                 _contains.Add(term);
             }
