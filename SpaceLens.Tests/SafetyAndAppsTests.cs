@@ -378,6 +378,46 @@ public class DetectorTests
         Assert.Equal(project, finding.DirectoryIndex);
     }
 
+    [Theory]
+    [InlineData(@"C:\Program Files")]
+    [InlineData(@"C:\Program Files\Some App")]
+    [InlineData(@"D:\Program Files")]
+    [InlineData(@"D:\SteamLibrary\steamapps\common")]
+    [InlineData(@"C:\Users\me\AppData\Local")]
+    public void Developer_detector_skips_scans_rooted_in_installed_content(string root)
+    {
+        var tree = new ScanTree(root);
+        int app = tree.AddDirectory(ScanTree.RootIndex, "app");
+        int modules = tree.AddDirectory(app, "node_modules");
+        tree.CompleteDirectory(modules, 5L << 20, 10, 0);
+        string marker = tree.GetPath(app) + @"\package.json";
+
+        var context = new DetectionContext
+        {
+            Tree = tree,
+            Known = SafetyPolicyTests.Known,
+            FileExists = p => p.Replace('/', '\\').Equals(marker, StringComparison.OrdinalIgnoreCase),
+            DirectoryExists = _ => false,
+        };
+
+        Assert.DoesNotContain(new DeveloperFilesDetector().Detect(context, CancellationToken.None), f => f.Group == "node_modules");
+
+        // The same layout in a projects folder is reported.
+        var projects = new ScanTree(@"D:\Projects");
+        int web = projects.AddDirectory(ScanTree.RootIndex, "web");
+        int webModules = projects.AddDirectory(web, "node_modules");
+        projects.CompleteDirectory(webModules, 5L << 20, 10, 0);
+        string webMarker = projects.GetPath(web) + @"\package.json";
+        var projectContext = new DetectionContext
+        {
+            Tree = projects,
+            Known = SafetyPolicyTests.Known,
+            FileExists = p => p.Replace('/', '\\').Equals(webMarker, StringComparison.OrdinalIgnoreCase),
+            DirectoryExists = _ => false,
+        };
+        Assert.Single(new DeveloperFilesDetector().Detect(projectContext, CancellationToken.None), f => f.Group == "node_modules");
+    }
+
     [Fact]
     public void Parses_steam_library_folders_and_manifests()
     {

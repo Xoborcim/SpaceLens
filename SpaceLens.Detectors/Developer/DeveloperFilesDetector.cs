@@ -87,9 +87,14 @@ public sealed class DeveloperFilesDetector : DetectorBase
         int profileIndex = Find(context, context.Known.UserProfile);
         bool rootIsDrive = tree.RootPath.Length == 3;
 
+        // A scan of C:\Program Files, D:\SteamLibrary\steamapps\... or AppData itself: everything in it is installed content.
+        bool rootIsInstalledContent = IsInstalledContentPath(tree.RootPath) ||
+            new[] { context.Known.WindowsDirectory, context.Known.ProgramFiles, context.Known.ProgramFilesX86, context.Known.ProgramData, Path.Combine(context.Known.UserProfile, "AppData") }
+                .Any(p => !string.IsNullOrEmpty(p) && PathUtil.IsSameOrUnder(tree.RootPath, p));
+
         TreeWalker.Walk(tree, ScanTree.RootIndex, d =>
         {
-            if (claimed.Contains(d) || excluded.Contains(d))
+            if (rootIsInstalledContent || claimed.Contains(d) || excluded.Contains(d))
             {
                 return false;
             }
@@ -274,6 +279,19 @@ public sealed class DeveloperFilesDetector : DetectorBase
         }
 
         return false;
+    }
+
+    /// <summary>True when a path lies inside a folder that holds installed applications or games, on any drive.</summary>
+    private static bool IsInstalledContentPath(string path)
+    {
+        string[] segments = PathUtil.NormalizeDisplayPath(path).Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        bool hasDrive = segments.Length > 0 && segments[0].Length == 2 && segments[0][1] == ':';
+        if (hasDrive && segments.Length > 1 && InstalledContentRootNames.Contains(segments[1]))
+        {
+            return true;
+        }
+
+        return segments.Skip(hasDrive ? 1 : 0).Any(InstalledContentNames.Contains);
     }
 
     private static bool IsElectronBundle(ScanTree tree, int dir)

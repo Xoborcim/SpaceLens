@@ -181,11 +181,15 @@ public sealed class SearchQuery
         private long _modifiedBefore = long.MaxValue;
         private long _modifiedAfter = long.MinValue;
 
+        // An invalid older:/newer: value or an unknown type: makes the filter match nothing. (Treating it as
+        // name text would still match a file literally named "type:xyz".)
+        private bool _matchesNothing;
+
         private bool HasDateFilter => _modifiedBefore != long.MaxValue || _modifiedAfter != long.MinValue;
 
         public bool IsEmpty =>
             _contains.Count == 0 && _wildcards.Count == 0 && _extensions.Count == 0 && _paths.Count == 0 && _categories.Count == 0 &&
-            _minSize == long.MinValue && _maxSize == long.MaxValue && !HasDateFilter;
+            _minSize == long.MinValue && _maxSize == long.MaxValue && !HasDateFilter && !_matchesNothing;
 
         public bool FilesOnly => _categories.Count > 0 || HasDateFilter;
 
@@ -245,7 +249,7 @@ public sealed class SearchQuery
                 else
                 {
                     // Not a valid age or date: match nothing rather than silently ignoring the term.
-                    _contains.Add(term);
+                    _matchesNothing = true;
                 }
 
                 return;
@@ -281,7 +285,7 @@ public sealed class SearchQuery
                 // even when another type: term in the same query was recognized.
                 if (!matched)
                 {
-                    _contains.Add(term);
+                    _matchesNothing = true;
                 }
 
                 return;
@@ -305,7 +309,7 @@ public sealed class SearchQuery
         /// <summary>Cheap checks first; the path is only built when a path term needs it.</summary>
         public bool Matches(SearchCandidate item)
         {
-            if (!item.IsFile && FilesOnly)
+            if (_matchesNothing || !item.IsFile && FilesOnly)
             {
                 return false;
             }

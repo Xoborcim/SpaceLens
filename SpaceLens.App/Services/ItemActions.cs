@@ -97,8 +97,10 @@ public static class ItemActions
         }
 
         // Removable and network drives normally have no Recycle Bin: the shell deletes permanently there.
+        // A selection can mix both kinds of drive; the dialog says which items are deleted permanently.
         var noRecycleBin = items.Select(i => i.Path).Where(p => !DriveService.HasRecycleBin(p)).ToList();
-        bool permanent = noRecycleBin.Count > 0;
+        bool anyPermanent = noRecycleBin.Count > 0;
+        bool allPermanent = noRecycleBin.Count == items.Count;
 
         var blocked = items.Where(i => !IsRemovable(i)).ToList();
         if (blocked.Count > 0)
@@ -144,25 +146,36 @@ public static class ItemActions
         }
 
         CheckBox? acknowledge = null;
-        if (permanent)
+        if (anyPermanent)
         {
-            string driveName = Path.GetPathRoot(noRecycleBin[0])?.TrimEnd('\\') ?? noRecycleBin[0];
+            var drives = noRecycleBin.Select(p => Path.GetPathRoot(p)?.TrimEnd('\\') ?? p).Distinct(StringComparer.OrdinalIgnoreCase);
+            string which = allPermanent
+                ? $"Items on {string.Join(", ", drives)} will be deleted permanently and cannot be restored."
+                : $"{noRecycleBin.Count} of the {items.Count} items are on {string.Join(", ", drives)} and will be deleted permanently:\n" +
+                  string.Join("\n", noRecycleBin.Take(5)) + (noRecycleBin.Count > 5 ? $"\n… and {noRecycleBin.Count - 5} more" : "") +
+                  "\nThe other items go to the Recycle Bin.";
             content.Children.Add(new InfoBar
             {
                 IsOpen = true,
                 IsClosable = false,
                 Severity = InfoBarSeverity.Error,
-                Title = "This drive has no Recycle Bin",
-                Message = $"Items on {driveName} will be deleted permanently and cannot be restored.",
+                Title = allPermanent ? "This drive has no Recycle Bin" : "Some items cannot go to the Recycle Bin",
+                Message = which,
             });
-            acknowledge = new CheckBox { Content = "I understand these items cannot be recovered." };
+            acknowledge = new CheckBox
+            {
+                Content = allPermanent ? "I understand these items cannot be recovered." : "I understand the items listed above cannot be recovered.",
+            };
             content.Children.Add(acknowledge);
         }
-        else
+
+        if (!allPermanent)
         {
             content.Children.Add(new TextBlock
             {
-                Text = "You can restore items from the Recycle Bin until it is emptied.",
+                Text = anyPermanent
+                    ? "Items moved to the Recycle Bin can be restored until it is emptied."
+                    : "You can restore items from the Recycle Bin until it is emptied.",
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.8,
             });
@@ -170,14 +183,14 @@ public static class ItemActions
 
         var dialog = new ContentDialog
         {
-            Title = permanent
+            Title = allPermanent
                 ? (items.Count == 1 ? "Delete permanently?" : $"Delete {items.Count} items permanently?")
                 : (items.Count == 1 ? "Move to Recycle Bin?" : $"Move {items.Count} items to the Recycle Bin?"),
             Content = new ScrollViewer { Content = content, MaxHeight = 420 },
-            PrimaryButtonText = permanent ? "Delete permanently" : "Move to Recycle Bin",
+            PrimaryButtonText = allPermanent ? "Delete permanently" : anyPermanent ? "Remove" : "Move to Recycle Bin",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
-            IsPrimaryButtonEnabled = !permanent,
+            IsPrimaryButtonEnabled = !anyPermanent,
             XamlRoot = State.XamlRoot,
         };
 
@@ -198,7 +211,7 @@ public static class ItemActions
             .Where(i => i.IsDirectory ? !Directory.Exists(i.Path) : !File.Exists(i.Path))
             .Select(i => (i.IsFile, i.Index))
             .ToList());
-        if (result.Success && !permanent && freeBefore >= 0 && State.SelectedDrive is { } drive && drive.FreeBytes <= freeBefore)
+        if (result.Success && !anyPermanent && freeBefore >= 0 && State.SelectedDrive is { } drive && drive.FreeBytes <= freeBefore)
         {
             State.StatusDetail += "  ·  Free space is unchanged until the Recycle Bin is emptied";
         }

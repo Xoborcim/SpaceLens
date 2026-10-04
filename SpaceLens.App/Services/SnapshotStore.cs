@@ -74,19 +74,38 @@ public static class SnapshotStore
     {
         lock (SaveGate)
         {
+            // Write the new snapshot completely first: if that fails (full disk...), the current one stays.
+            string current = PathFor(tree.RootPath);
+            string written = current + ".new";
             try
             {
-                string current = PathFor(tree.RootPath);
+                SnapshotSerializer.SaveToFile(tree, written);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return;
+            }
+
+            try
+            {
                 if (File.Exists(current))
                 {
                     File.Move(current, PreviousPathFor(tree.RootPath), overwrite: true);
                 }
+
+                File.Move(written, current, overwrite: true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                // Rotation failed: still make the new scan the current one if possible.
+                try
+                {
+                    File.Move(written, current, overwrite: true);
+                }
+                catch (Exception inner) when (inner is IOException or UnauthorizedAccessException)
+                {
+                }
             }
-
-            SaveCore(tree);
         }
     }
 

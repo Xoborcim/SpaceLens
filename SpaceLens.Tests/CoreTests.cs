@@ -519,6 +519,22 @@ public class SearchTests
         Assert.Equal(["save.dat"], SearchNames(tree, "save \"path:x\" OR -\"Saved\" save"));
     }
 
+    [Fact]
+    public void Invalid_filters_match_nothing_even_names_containing_the_literal_text()
+    {
+        var tree = ScanTreeTests.Sample();
+        int me = tree.FindDirectory(@"C:\Users\me");
+        int odd = tree.AddDirectory(me, "notes type:nonsense older:soon");
+        tree.CompleteDirectory(odd, 2L << 20, 1, 0);
+
+        Assert.Empty(SearchNames(tree, "type:nonsense"));
+        Assert.Empty(SearchNames(tree, "older:soon"));
+        Assert.Empty(SearchNames(tree, "type:video type:nonsense"));
+        Assert.Contains("notes type:nonsense older:soon", SearchNames(tree, "\"type:nonsense\""));
+        Assert.Contains("movie.mkv", SearchNames(tree, ".mkv -older:soon"));
+        Assert.Equal(["movie.mkv"], SearchNames(tree, "type:nonsense OR .mkv"));
+    }
+
     private static List<string> SearchNames(ScanTree tree, string query) =>
         SearchEngine.Search(tree, SearchQuery.Parse(query)).Hits
             .Select(h => h.IsFile ? tree.File(h.Index).Name : tree.Dir(h.Index).Name).ToList();
