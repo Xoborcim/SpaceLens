@@ -44,6 +44,9 @@ them through the normal Recycle Bin confirmation.
 Right-click a folder and choose "Rescan this folder" to update just that folder
 in the results instead of rescanning the whole drive.
 
+The map on the Overview can be coloured by location, by file type (the type
+holding the most space in each folder) or by age (the newest change inside).
+
 Export (next to Rescan) saves the folders or the large files as CSV, or a full
 report as JSON. Sizes are in bytes and times are UTC (ISO 8601).
 

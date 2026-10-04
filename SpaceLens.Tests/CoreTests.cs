@@ -690,3 +690,40 @@ public class CommandLineTests
         Assert.Equal("\"C:\\Tools\\SpaceLens\\SpaceLens.exe\" \"%1\"",
             SpaceLens.Windows.Shell.ExplorerIntegration.CommandFor(@"C:\Tools\SpaceLens\SpaceLens.exe", "%1"));
 }
+
+public class TreemapColoringTests
+{
+    private static readonly DateTime Now = new(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void Folders_take_the_colour_of_their_largest_file_type_and_newest_change()
+    {
+        var tree = new ScanTree(@"D:\");
+        int media = tree.AddDirectory(ScanTree.RootIndex, "Media", lastWriteUtc: Now.AddYears(-4).ToFileTimeUtc());
+        int deep = tree.AddDirectory(media, "Deep", lastWriteUtc: Now.AddYears(-4).ToFileTimeUtc());
+        tree.AddFile(media, "a.mkv", 3L << 30, FileCategory.Video, Now.AddYears(-4).ToFileTimeUtc());
+        tree.AddFile(deep, "b.iso", 2L << 30, FileCategory.DiskImage, Now.AddDays(-3).ToFileTimeUtc());
+        tree.AddFile(deep, "c.mp4", 1L << 30, FileCategory.Video, Now.AddYears(-4).ToFileTimeUtc());
+        int empty = tree.AddDirectory(ScanTree.RootIndex, "Empty");
+
+        Assert.Equal(FileCategory.Video, TreemapColoring.DominantCategory(tree, media)); // 4 GB video vs 2 GB image
+        Assert.Equal(FileCategory.DiskImage, TreemapColoring.DominantCategory(tree, deep)); // 2 GB image vs 1 GB video
+        Assert.Null(TreemapColoring.DominantCategory(tree, empty));
+
+        Assert.Equal(Now.AddDays(-3).ToFileTimeUtc(), TreemapColoring.NewestWriteUtc(tree, media));
+        Assert.Equal(TreemapColoring.AgeBands[0].Color, TreemapColoring.AgeColor(TreemapColoring.NewestWriteUtc(tree, media), Now));
+        Assert.Equal(0, TreemapColoring.NewestWriteUtc(tree, empty));
+    }
+
+    [Theory]
+    [InlineData(5, 0)]
+    [InlineData(60, 1)]
+    [InlineData(300, 2)]
+    [InlineData(700, 3)]
+    [InlineData(5000, 4)]
+    public void Ages_fall_into_bands(int daysOld, int band) =>
+        Assert.Equal(TreemapColoring.AgeBands[band].Color, TreemapColoring.AgeColor(Now.AddDays(-daysOld).ToFileTimeUtc(), Now));
+
+    [Fact]
+    public void Unknown_dates_are_grey() => Assert.Equal(TreemapColoring.UnknownColor, TreemapColoring.AgeColor(0, Now));
+}
