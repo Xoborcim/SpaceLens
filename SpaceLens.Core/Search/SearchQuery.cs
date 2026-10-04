@@ -11,6 +11,9 @@ namespace SpaceLens.Core.Search;
 /// <item><c>.iso</c> – files with extension .iso, and folders named exactly ".iso" (so <c>.git</c> finds .git folders)</item>
 /// <item><c>*.vmdk</c>, <c>backup_??.zip</c> – wildcard match on the name</item>
 /// <item><c>&gt;5GB</c>, <c>&lt;100MB</c>, <c>&gt;=1g</c> – size filters</item>
+/// <item><c>older:1y</c>, <c>newer:30d</c> – files not modified in the last year / modified in the last 30 days
+/// (units d, w, m, y; or a date such as <c>older:2024-01-01</c>). Folder dates do not reflect changes deeper
+/// inside them, so these filters only match files.</item>
 /// <item><c>type:video</c> – file category (several <c>type:</c> terms match any of the categories)</item>
 /// <item><c>"two words"</c> – quoted substring</item>
 /// </list>
@@ -26,16 +29,27 @@ public sealed class SearchQuery
 
     public long MaxSize { get; private set; } = long.MaxValue;
 
+    /// <summary>Files must have been modified before this FILETIME (UTC); long.MaxValue when unrestricted.</summary>
+    public long ModifiedBefore { get; private set; } = long.MaxValue;
+
+    /// <summary>Files must have been modified at or after this FILETIME (UTC); long.MinValue when unrestricted.</summary>
+    public long ModifiedAfter { get; private set; } = long.MinValue;
+
+    private bool HasDateFilter => ModifiedBefore != long.MaxValue || ModifiedAfter != long.MinValue;
+
+    private DateTime _nowUtc = DateTime.UtcNow;
+
     public bool IsEmpty =>
         _contains.Count == 0 && _wildcards.Count == 0 && _extensions.Count == 0 && _categories.Count == 0 &&
-        MinSize == long.MinValue && MaxSize == long.MaxValue;
+        MinSize == long.MinValue && MaxSize == long.MaxValue && !HasDateFilter;
 
-    /// <summary>Category filters only match files.</summary>
-    public bool FilesOnly => _categories.Count > 0;
+    /// <summary>Category and date filters only match files.</summary>
+    public bool FilesOnly => _categories.Count > 0 || HasDateFilter;
 
-    public static SearchQuery Parse(string? text)
+    /// <param name="nowUtc">The reference time for relative dates such as <c>older:1y</c> (tests pass a fixed one).</param>
+    public static SearchQuery Parse(string? text, DateTime? nowUtc = null)
     {
-        var query = new SearchQuery();
+        var query = new SearchQuery { _nowUtc = nowUtc ?? DateTime.UtcNow };
         if (string.IsNullOrWhiteSpace(text))
         {
             return query;
@@ -81,6 +95,30 @@ public sealed class SearchQuery
             }
         }
 
+        bool older = term.StartsWith("older:", StringComparison.OrdinalIgnoreCase);
+        if (older || term.StartsWith("newer:", StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryParseCutoff(term[6..], _nowUtc, out var cutoff))
+            {
+                long fileTime = cutoff.ToFileTimeUtc();
+                if (older)
+                {
+                    ModifiedBefore = Math.Min(ModifiedBefore, fileTime);
+                }
+                else
+                {
+                    ModifiedAfter = Math.Max(ModifiedAfter, fileTime);
+                }
+            }
+            else
+            {
+                // Not a valid age or date: match nothing rather than silently ignoring the term.
+                _contains.Add(term);
+            }
+
+            return;
+        }
+
         if (term.StartsWith("type:", StringComparison.OrdinalIgnoreCase) || term.StartsWith("kind:", StringComparison.OrdinalIgnoreCase))
         {
             string wanted = term[5..];
@@ -122,6 +160,58 @@ public sealed class SearchQuery
     }
 
     public bool MatchesSize(long size) => size >= MinSize && size <= MaxSize;
+
+    /// <summary>True when there is no date filter, or the time (FILETIME, UTC) is known and within it.</summary>
+    public bool MatchesModified(long lastWriteUtc) =>
+        !HasDateFilter || lastWriteUtc > 0 && lastWriteUtc < ModifiedBefore && lastWriteUtc >= ModifiedAfter;
+
+    /// <summary>
+    /// Turns an age ("30d", "2w", "6m", "1y", a bare number of days) or a date ("2024-01-01", "2024-01",
+    /// "2024", local time) into the corresponding moment in UTC.
+    /// </summary>
+    public static bool TryParseCutoff(string text, DateTime nowUtc, out DateTime cutoffUtc)
+    {
+        cutoffUtc = default;
+        text = text.Trim();
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        string[] dateFormats = ["yyyy-MM-dd", "yyyy-MM", "yyyy"];
+        if (text.Length >= 4 && DateTime.TryParseExact(text, dateFormats, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeLocal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var date) &&
+            date.Year >= 1970)
+        {
+            cutoffUtc = date;
+            return true;
+        }
+
+        char unit = char.ToLowerInvariant(text[^1]);
+        string digits = char.IsLetter(unit) ? text[..^1] : text;
+        if (!int.TryParse(digits, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int amount) || amount > 10_000)
+        {
+            return false;
+        }
+
+        try
+        {
+            cutoffUtc = unit switch
+            {
+                'd' or >= '0' and <= '9' => nowUtc.AddDays(-amount),
+                'w' => nowUtc.AddDays(-7.0 * amount),
+                'm' => nowUtc.AddMonths(-amount),
+                'y' => nowUtc.AddYears(-amount),
+                _ => default,
+            };
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+
+        return cutoffUtc != default;
+    }
 
     public bool MatchesName(string name, bool isFile, FileCategory category = FileCategory.Other)
     {

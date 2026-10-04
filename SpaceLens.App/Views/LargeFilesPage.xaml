@@ -36,6 +36,13 @@
                 Visibility="Collapsed"
                 ValueChanged="OnCustomChanged" />
             <ComboBox x:Name="TypeFilter" Header="Type" MinWidth="180" SelectionChanged="OnFilterChanged" AutomationProperties.Name="File type" />
+            <ComboBox x:Name="AgeFilter" Header="Last modified" MinWidth="180" SelectionChanged="OnFilterChanged" AutomationProperties.Name="Last modified">
+                <ComboBoxItem Content="Any time" IsSelected="True" />
+                <ComboBoxItem Content="Not in 6 months" Tag="6m" />
+                <ComboBoxItem Content="Not in a year" Tag="1y" />
+                <ComboBoxItem Content="Not in 2 years" Tag="2y" />
+                <ComboBoxItem Content="Not in 5 years" Tag="5y" />
+            </ComboBox>
         </StackPanel>
 
         <Grid Grid.Row="2" ColumnSpacing="16">

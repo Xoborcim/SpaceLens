@@ -58,7 +58,7 @@ public static class SearchEngine
                 }
 
                 ref var file = ref tree.File(i);
-                if (query.MatchesSize(file.Size) && query.MatchesName(file.Name, isFile: true, file.Category))
+                if (query.MatchesSize(file.Size) && query.MatchesModified(file.LastWriteUtc) && query.MatchesName(file.Name, isFile: true, file.Category))
                 {
                     matches++;
                     top.Offer(file.Size, new SearchHit(true, i, file.Size));

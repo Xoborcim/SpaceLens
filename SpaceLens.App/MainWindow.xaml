@@ -42,7 +42,7 @@
                     PlaceholderText="Search results (Ctrl+F)"
                     QueryIcon="Find"
                     AutomationProperties.Name="Search scan results"
-                    ToolTipService.ToolTip="Examples: .iso   *.vmdk   steam   node_modules   &gt;5GB   type:video"
+                    ToolTipService.ToolTip="Examples: .iso   *.vmdk   steam   node_modules   &gt;5GB   type:video   older:1y"
                     TextChanged="OnSearchTextChanged"
                     QuerySubmitted="OnSearchSubmitted" />
             </NavigationView.AutoSuggestBox>

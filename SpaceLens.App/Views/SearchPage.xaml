@@ -37,6 +37,8 @@
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="node_modules      folders by name" />
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="&gt;5GB                    size filters (&lt; and &gt;)" />
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="type:video          file types" />
+                        <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="older:1y              files not modified in a year (d, w, m, y or a date)" />
+                        <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="newer:30d           files modified in the last 30 days" />
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="Files smaller than 1 MB are not indexed individually." Margin="0,8,0,0" />
                     </StackPanel>
                 </Grid>

@@ -412,6 +412,74 @@ public class SearchTests
         Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse(".git type:video")).Hits);
     }
 
+    private static readonly DateTime Now = new(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>D:\old.iso (3 years old), D:\recent.mkv (10 days old), D:\unknown.bin (no date), D:\Archive folder.</summary>
+    private static ScanTree DatedTree()
+    {
+        var tree = new ScanTree(@"D:\");
+        int archive = tree.AddDirectory(ScanTree.RootIndex, "Archive", lastWriteUtc: Now.AddYears(-5).ToFileTimeUtc());
+        tree.AddFile(ScanTree.RootIndex, "old.iso", 4L << 30, FileCategory.DiskImage, Now.AddYears(-3).ToFileTimeUtc());
+        tree.AddFile(ScanTree.RootIndex, "recent.mkv", 2L << 30, FileCategory.Video, Now.AddDays(-10).ToFileTimeUtc());
+        tree.AddFile(ScanTree.RootIndex, "unknown.bin", 1L << 30, FileCategory.Other, 0);
+        tree.CompleteDirectory(archive, 5L << 30, 10, 0);
+        tree.CompleteDirectory(ScanTree.RootIndex, 7L << 30, 3, 1);
+        return tree;
+    }
+
+    private static List<string> Names(ScanTree tree, string query) =>
+        SearchEngine.Search(tree, SearchQuery.Parse(query, Now)).Hits
+            .Select(h => h.IsFile ? tree.File(h.Index).Name : tree.Dir(h.Index).Name).ToList();
+
+    [Fact]
+    public void Older_and_newer_filter_files_by_modification_date()
+    {
+        var tree = DatedTree();
+        Assert.Equal(["old.iso"], Names(tree, "older:1y"));
+        Assert.Equal(["old.iso"], Names(tree, "older:2024-01-01"));
+        Assert.Equal(["recent.mkv"], Names(tree, "newer:30d"));
+        Assert.Equal(["recent.mkv"], Names(tree, "newer:2w"));
+        Assert.Equal(["old.iso", "recent.mkv"], Names(tree, "older:1w"));
+        Assert.Empty(Names(tree, "older:1y newer:2y"));
+        Assert.Equal(["old.iso"], Names(tree, "older:1y newer:4y"));
+        Assert.Equal(["old.iso"], Names(tree, "older:6m >3GB"));
+        Assert.Empty(Names(tree, "older:soon"));
+    }
+
+    [Theory]
+    [InlineData("30d", 30.0)]
+    [InlineData("45", 45.0)]
+    [InlineData("1000", 1000.0)]
+    [InlineData("2w", 14.0)]
+    public void Ages_are_parsed_in_days_and_weeks(string text, double days)
+    {
+        Assert.True(SearchQuery.TryParseCutoff(text, Now, out var cutoff));
+        Assert.Equal(Now.AddDays(-days), cutoff);
+    }
+
+    [Fact]
+    public void Ages_in_months_and_years_and_dates_are_parsed()
+    {
+        Assert.True(SearchQuery.TryParseCutoff("6m", Now, out var months));
+        Assert.Equal(Now.AddMonths(-6), months);
+        Assert.True(SearchQuery.TryParseCutoff("2Y", Now, out var years));
+        Assert.Equal(Now.AddYears(-2), years);
+        Assert.True(SearchQuery.TryParseCutoff("2024", Now, out var year));
+        Assert.Equal(2024, year.ToLocalTime().Year);
+        Assert.False(SearchQuery.TryParseCutoff("", Now, out _));
+        Assert.False(SearchQuery.TryParseCutoff("3x", Now, out _));
+        Assert.False(SearchQuery.TryParseCutoff("-5d", Now, out _));
+    }
+
+    [Fact]
+    public void Large_files_can_be_limited_to_files_not_modified_recently()
+    {
+        var tree = DatedTree();
+        var old = Breakdown.LargeFiles(tree, 0, modifiedBefore: Now.AddYears(-1).ToFileTimeUtc());
+        Assert.Equal(["old.iso"], old.Select(i => tree.File(i).Name));
+        Assert.Equal(3, Breakdown.LargeFiles(tree, 0).Count);
+    }
+
     [Fact]
     public void Type_filter_and_quoted_terms()
     {
