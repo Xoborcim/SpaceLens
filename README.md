@@ -28,7 +28,9 @@ dotnet run --project SpaceLens.App -c Release
 dotnet publish SpaceLens.App -c Release -o publish\SpaceLens
 ```
 
-`SpaceLens.exe <folder>` starts a scan of that folder right away.
+`SpaceLens.exe <folder>` starts a scan of that folder right away. Settings can
+add "Analyze with SpaceLens" to File Explorer's right-click menu for folders
+and drives.
 
 Export (next to Rescan) saves the folders or the large files as CSV, or a full
 report as JSON. Sizes are in bytes and times are UTC (ISO 8601).
@@ -98,7 +100,11 @@ Large Files can also be limited to files not modified in 6 months to 5 years.
   point to that tool instead of offering direct deletion.
 - No label says "safe to delete". Developer storage is explained before any
   removal.
-- SpaceLens never changes the registry and never "cleans" Windows.
+- SpaceLens never "cleans" Windows and never changes the registry, with one
+  opt-in exception: the "Analyze with SpaceLens" entry in File Explorer's
+  right-click menu (Settings > File Explorer) adds keys under
+  `HKEY_CURRENT_USER\Software\Classes`, for the current user only. Turning
+  the setting off deletes them again.
 - Administrator rights are never required.
 
 ## Privacy

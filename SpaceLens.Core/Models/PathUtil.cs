@@ -121,6 +121,27 @@ public static class PathUtil
         return slash == 2 && path[1] == ':' ? path[..3] : path[..slash];
     }
 
+    /// <summary>
+    /// Cleans a folder passed on the command line. Explorer passes a drive as <c>"C:\"</c>, and the
+    /// Windows argument rules turn the backslash before the closing quote into an escaped quote, so the
+    /// program receives <c>C:"</c>. Stray quotes are removed and a bare drive gets its backslash back.
+    /// </summary>
+    public static string? CleanCommandLinePath(string? argument)
+    {
+        if (string.IsNullOrWhiteSpace(argument))
+        {
+            return null;
+        }
+
+        string path = argument.Trim().Trim('"').Trim();
+        if (path.Length == 2 && path[1] == ':')
+        {
+            path += "\\";
+        }
+
+        return path.Length > 0 ? path : null;
+    }
+
     public static string Combine(string directory, string name) =>
         EndsWithSeparator(directory) ? directory + name : directory + "\\" + name;
 }

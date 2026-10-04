@@ -628,3 +628,22 @@ public class LocationClassifierTests
         Assert.Equal(tree.Root.TotalSize, totals.Values.Sum());
     }
 }
+
+public class CommandLineTests
+{
+    [Theory]
+    [InlineData(@"D:\Projects", @"D:\Projects")]
+    [InlineData("\"D:\\Projects\"", @"D:\Projects")]
+    [InlineData("C:\"", @"C:\")]
+    [InlineData("C:", @"C:\")]
+    [InlineData(@"C:\", @"C:\")]
+    [InlineData("  ", null)]
+    [InlineData("\"\"", null)]
+    public void Explorer_arguments_are_cleaned(string argument, string? expected) =>
+        Assert.Equal(expected, PathUtil.CleanCommandLinePath(argument));
+
+    [Fact]
+    public void Explorer_command_quotes_the_program_and_the_location() =>
+        Assert.Equal("\"C:\\Tools\\SpaceLens\\SpaceLens.exe\" \"%1\"",
+            SpaceLens.Windows.Shell.ExplorerIntegration.CommandFor(@"C:\Tools\SpaceLens\SpaceLens.exe", "%1"));
+}

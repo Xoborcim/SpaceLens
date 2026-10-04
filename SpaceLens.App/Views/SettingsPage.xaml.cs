@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Navigation;
 using SpaceLens.App.Services;
 using SpaceLens.Core.Formatting;
 using SpaceLens.Windows.FileSystem;
+using SpaceLens.Windows.Shell;
 
 namespace SpaceLens.App.Views;
 
@@ -31,6 +32,7 @@ public sealed partial class SettingsPage : Page
         RememberToggle.IsOn = Settings.RememberScans;
         EngineChoice.SelectedItem = EngineChoice.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == Settings.Engine.ToString());
         WorkersBox.Value = Settings.Workers;
+        ExplorerToggle.IsOn = Environment.ProcessPath is { } exe && ExplorerIntegration.IsRegistered(exe);
         _loading = false;
 
         UpdateSnapshotSize();
@@ -73,6 +75,33 @@ public sealed partial class SettingsPage : Page
         if (storeChanged)
         {
             _ = State.LoadAppsAsync(force: true, includeStore: StoreToggle.IsOn);
+        }
+    }
+
+    private async void OnExplorerToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || Environment.ProcessPath is not { } exe)
+        {
+            return;
+        }
+
+        try
+        {
+            if (ExplorerToggle.IsOn)
+            {
+                ExplorerIntegration.Register(exe);
+            }
+            else
+            {
+                ExplorerIntegration.Unregister();
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            _loading = true;
+            ExplorerToggle.IsOn = ExplorerIntegration.IsRegistered(exe);
+            _loading = false;
+            await ItemActions.ShowMessageAsync("File Explorer was not changed", ex.Message);
         }
     }
 
