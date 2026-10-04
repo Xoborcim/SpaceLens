@@ -22,6 +22,13 @@ public sealed class AppSettings
     public bool IncludeStoreApps { get; set; } = true;
     public bool RememberScans { get; set; } = true;
     public string? LastRoot { get; set; }
+
+    /// <summary>Search queries the user saved, in the order they were saved.</summary>
+    public List<string> SavedSearches
+    {
+        get;
+        set => field = value ?? [];
+    } = [];
 }
 
 [JsonSerializable(typeof(AppSettings))]

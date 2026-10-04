@@ -481,6 +481,49 @@ public class SearchTests
     }
 
     [Fact]
+    public void Or_separates_alternatives_and_binds_weaker_than_spaces()
+    {
+        var tree = ScanTreeTests.Sample();
+        Assert.Equal(["ubuntu.iso", "movie.mkv"], SearchNames(tree, ".iso OR .mkv"));
+        Assert.Equal(["ubuntu.iso", "movie.mkv"], SearchNames(tree, ".iso | .mkv"));
+        Assert.Equal(["movie.mkv"], SearchNames(tree, ".iso >10GB OR .mkv"));
+        Assert.Equal(["ubuntu.iso"], SearchNames(tree, "OR .iso OR"));
+        Assert.Empty(SearchNames(tree, "\"OR\""));
+    }
+
+    [Fact]
+    public void Minus_excludes_any_kind_of_term()
+    {
+        var tree = ScanTreeTests.Sample();
+        Assert.Equal(["movie.mkv"], SearchNames(tree, ">1GB -.iso -Big -Games -Users -me -Downloads -Videos"));
+        Assert.Equal(["ubuntu.iso"], SearchNames(tree, ">1GB -type:video -path:Games -Users -me -Downloads -Videos"));
+        Assert.DoesNotContain("Videos", SearchNames(tree, "-path:Videos"));
+        Assert.Contains("Downloads", SearchNames(tree, "-path:Videos"));
+
+        // Only exclusions: everything else matches.
+        Assert.Equal(SearchNames(tree, ">0").Count - 1, SearchNames(tree, "-Big").Count);
+    }
+
+    [Fact]
+    public void Path_matches_the_full_path_and_quotes_group_spaces()
+    {
+        var tree = ScanTreeTests.Sample();
+        int me = tree.FindDirectory(@"C:\Users\me");
+        int saved = tree.AddDirectory(me, "Saved Games");
+        tree.AddFile(saved, "save.dat", 2L << 20, FileCategory.Other, 0);
+        tree.CompleteDirectory(saved, 2L << 20, 1, 0);
+
+        Assert.Equal(["ubuntu.iso"], SearchNames(tree, "path:Downloads .iso"));
+        Assert.Equal(["ubuntu.iso", "movie.mkv", "save.dat"], SearchNames(tree, @"path:Users\me type:other OR path:users/me .iso OR path:users\me .mkv"));
+        Assert.Equal(["Saved Games", "save.dat"], SearchNames(tree, "path:\"Saved Games\""));
+        Assert.Equal(["save.dat"], SearchNames(tree, "save \"path:x\" OR -\"Saved\" save"));
+    }
+
+    private static List<string> SearchNames(ScanTree tree, string query) =>
+        SearchEngine.Search(tree, SearchQuery.Parse(query)).Hits
+            .Select(h => h.IsFile ? tree.File(h.Index).Name : tree.Dir(h.Index).Name).ToList();
+
+    [Fact]
     public void Type_filter_and_quoted_terms()
     {
         var tree = ScanTreeTests.Sample();

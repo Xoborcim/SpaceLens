@@ -57,7 +57,16 @@ public sealed partial class MainWindow : Window
         _searchDebounce.Tick += (_, _) => RunSearch(SearchBox.Text);
 
         State.PropertyChanged += OnStatePropertyChanged;
-        State.NavigationRequested += (_, request) => Navigate(request.Page, request.Parameter);
+        State.NavigationRequested += (_, request) =>
+        {
+            // A saved search was run: show its text in the search box too.
+            if (request.Page == "search" && request.Parameter is string query)
+            {
+                SearchBox.Text = query;
+            }
+
+            Navigate(request.Page, request.Parameter);
+        };
         State.TreeReplaced += (_, _) => UpdateChrome();
         State.ScanFinished += (_, _) => UpdateChrome();
 

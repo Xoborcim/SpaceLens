@@ -11,10 +11,25 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <StackPanel>
-            <TextBlock x:Name="TitleText" Text="Search" Style="{StaticResource PageTitleStyle}" />
-            <TextBlock x:Name="SummaryText" Style="{StaticResource SecondaryTextStyle}" AutomationProperties.LiveSetting="Polite" />
-        </StackPanel>
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock x:Name="TitleText" Text="Search" Style="{StaticResource PageTitleStyle}" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="SummaryText" Style="{StaticResource SecondaryTextStyle}" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+            <DropDownButton x:Name="SavedButton" Grid.Column="1" VerticalAlignment="Center" AutomationProperties.Name="Saved searches">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE734;" FontSize="14" />
+                    <TextBlock Text="Saved searches" />
+                </StackPanel>
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="SavedMenu" Placement="BottomEdgeAlignedRight" Opening="OnSavedMenuOpening" />
+                </DropDownButton.Flyout>
+            </DropDownButton>
+        </Grid>
         <Grid Grid.Row="1" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -39,6 +54,9 @@
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="type:video          file types" />
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="older:1y              files not modified in a year (d, w, m, y or a date)" />
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="newer:30d           files modified in the last 30 days" />
+                        <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="path:steamapps     full path contains (quote spaces: path:&quot;Program Files&quot;)" />
+                        <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="-node_modules      exclude anything matching a term" />
+                        <TextBlock Style="{StaticResource SecondaryTextStyle}" Text=".iso OR .vhdx        either one" />
                         <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="Files smaller than 1 MB are not indexed individually." Margin="0,8,0,0" />
                     </StackPanel>
                 </Grid>

@@ -85,6 +85,50 @@ public sealed partial class SearchPage : Page
         Details.Show(null);
     }
 
+    private List<string> Saved => AppState.Current.Settings.SavedSearches;
+
+    private bool IsSaved(string query) => Saved.Contains(query.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Rebuilt each time it opens: the saved queries, then save or remove for the current one.</summary>
+    private void OnSavedMenuOpening(object? sender, object e)
+    {
+        SavedMenu.Items.Clear();
+        foreach (var saved in Saved)
+        {
+            var item = new MenuFlyoutItem { Text = saved, Icon = new FontIcon { Glyph = "\uE721" } };
+            item.Click += (_, _) => AppState.Current.RequestNavigation("search", saved);
+            SavedMenu.Items.Add(item);
+        }
+
+        if (Saved.Count == 0)
+        {
+            SavedMenu.Items.Add(new MenuFlyoutItem { Text = "No saved searches yet", IsEnabled = false });
+        }
+
+        SavedMenu.Items.Add(new MenuFlyoutSeparator());
+        string current = _query.Trim();
+        if (current.Length > 0 && IsSaved(current))
+        {
+            var remove = new MenuFlyoutItem { Text = $"Remove \u201c{current}\u201d", Icon = new FontIcon { Glyph = "\uE74D" } };
+            remove.Click += (_, _) =>
+            {
+                Saved.RemoveAll(s => s.Equals(current, StringComparison.OrdinalIgnoreCase));
+                AppState.Current.ApplySettings();
+            };
+            SavedMenu.Items.Add(remove);
+        }
+        else
+        {
+            var save = new MenuFlyoutItem { Text = "Save this search", Icon = new FontIcon { Glyph = "\uE734" }, IsEnabled = current.Length > 0 };
+            save.Click += (_, _) =>
+            {
+                Saved.Add(current);
+                AppState.Current.ApplySettings();
+            };
+            SavedMenu.Items.Add(save);
+        }
+    }
+
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e) =>
         Details.Show(ResultList.SelectedItems.Count == 1 ? ResultList.SelectedItem as EntryItem : null);
 }

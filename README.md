@@ -37,6 +37,10 @@ Shift+F10 or the context-menu key shows the actions for the selected item.
 Search accepts plain text (`steam`), wildcards (`*.vmdk`), extensions (`.iso`),
 folder names (`node_modules`, `.git`), size filters (`>5GB`) and modification
 dates for files (`older:1y`, `newer:30d`, `older:2024-01-01`; units d, w, m, y).
+`path:steamapps` (or `path:"Program Files"`) matches the full path, `-term`
+excludes anything matching a term (`-node_modules`, `-type:video`), and `OR`
+separates alternatives (`.iso >4GB OR .vhdx`). Searches can be saved from the
+Saved searches menu on the results page.
 Large Files can also be limited to files not modified in 6 months to 5 years.
 
 ## Architecture
