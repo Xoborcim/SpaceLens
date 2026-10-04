@@ -550,6 +550,112 @@ public sealed class ScanTree
         totals[largest] -= Math.Min(remaining, weights[largest]);
     }
 
+    /// <summary>
+    /// Replaces a folder's contents with a fresh scan of that folder (a tree rooted at the folder's path),
+    /// for "rescan this folder" without rescanning the drive. The old subtree is removed, the fresh one is
+    /// copied in under a new index, and the totals of every ancestor are corrected.
+    /// </summary>
+    /// <returns>The folder's new directory index.</returns>
+    public int ReplaceDirectory(int dirIndex, ScanTree fresh)
+    {
+        if (dirIndex == RootIndex)
+        {
+            throw new InvalidOperationException("The scan root is replaced by a full rescan.");
+        }
+
+        if (fresh.FileIndexThreshold != FileIndexThreshold)
+        {
+            throw new ArgumentException("The fresh scan must use the same file index threshold.", nameof(fresh));
+        }
+
+        lock (SyncRoot)
+        {
+            ref var old = ref _dirs[dirIndex];
+            if (old.IsRemoved)
+            {
+                throw new InvalidOperationException("The folder was removed.");
+            }
+
+            int parent = old.Parent;
+            string name = old.Name;
+            var keptFlags = old.Flags & (NodeFlags.Hidden | NodeFlags.System);
+            RemoveDirectoryCore(dirIndex);
+
+            // Fresh directories were allocated parent first, so one pass in index order rebuilds the links.
+            var map = new int[fresh.DirectoryCount];
+            Array.Fill(map, -1);
+            ref var freshRoot = ref fresh.Dir(RootIndex);
+            map[RootIndex] = AddDirectory(parent, name, keptFlags | (freshRoot.Flags & ~(NodeFlags.Removed | NodeFlags.Hidden | NodeFlags.System)), freshRoot.LastWriteUtc);
+            for (int i = 1; i < map.Length; i++)
+            {
+                if (!fresh.IsLiveDirectory(i) || map[fresh.Dir(i).Parent] < 0)
+                {
+                    continue;
+                }
+
+                ref var node = ref fresh.Dir(i);
+                map[i] = AddDirectory(map[node.Parent], node.Name, node.Flags, node.LastWriteUtc);
+            }
+
+            for (int i = 0; i < map.Length; i++)
+            {
+                if (map[i] >= 0)
+                {
+                    ref var target = ref _dirs[map[i]];
+                    target.OwnSize = fresh.Dir(i).OwnSize;
+                    target.OwnFileCount = fresh.Dir(i).OwnFileCount;
+                    target.TotalSize = target.OwnSize;
+                    target.TotalFiles = target.OwnFileCount;
+                    target.TotalDirs = 0;
+                }
+            }
+
+            int fileCount = fresh.FileRecordCount;
+            for (int f = 0; f < fileCount; f++)
+            {
+                if (fresh.IsLiveFile(f) && map[fresh.File(f).Directory] >= 0)
+                {
+                    ref var file = ref fresh.File(f);
+                    AddFile(map[file.Directory], file.Name, file.Size, file.Category, file.LastWriteUtc, file.Attributes);
+                }
+            }
+
+            // Totals inside the new subtree, bottom up (children have larger fresh indices than parents).
+            for (int i = map.Length - 1; i > RootIndex; i--)
+            {
+                if (map[i] >= 0)
+                {
+                    ref var child = ref _dirs[map[i]];
+                    ref var up = ref _dirs[child.Parent];
+                    up.TotalSize += child.TotalSize;
+                    up.TotalFiles += child.TotalFiles;
+                    up.TotalDirs += child.TotalDirs + 1;
+                }
+            }
+
+            ref var replaced = ref _dirs[map[RootIndex]];
+            for (int p = parent; p >= 0; p = _dirs[p].Parent)
+            {
+                _dirs[p].TotalSize += replaced.TotalSize;
+                _dirs[p].TotalFiles += replaced.TotalFiles;
+                _dirs[p].TotalDirs += replaced.TotalDirs + 1;
+            }
+
+            for (int c = 0; c < CategoryBytes.Length; c++)
+            {
+                CategoryBytes[c] += fresh.CategoryBytes[c];
+                CategoryCounts[c] += fresh.CategoryCounts[c];
+            }
+
+            foreach (var error in fresh.Errors)
+            {
+                RecordError(error.Path, error.ErrorCode, error.Message);
+            }
+
+            return map[RootIndex];
+        }
+    }
+
     private delegate ref int NextAccessor(ScanTree tree, int index);
 
     private void Unlink(ref int head, int target, NextAccessor next)

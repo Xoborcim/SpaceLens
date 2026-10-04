@@ -434,6 +434,11 @@ public static class ItemActions
                 menu.Items.Add(new MenuFlyoutSeparator());
                 Add("Show in Folders", "\uE8B7", () => State.RequestNavigation("folders", item));
                 Add("Scan this folder", "\uE721", () => ScanFolder(item), enabled: !State.IsScanning);
+                if (item.Index != Core.Models.ScanTree.RootIndex && item.Tree is { } tree)
+                {
+                    Add("Rescan this folder", "\uE72C", () => _ = State.RescanFolderAsync(tree, item.Index),
+                        enabled: !State.IsScanning && !State.IsRescanningFolder && tree == State.Tree);
+                }
             }
 
             var app = item.Kind == EntryKind.Directory ? State.FindAppForPath(item.Path) : null;

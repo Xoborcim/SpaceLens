@@ -803,6 +803,12 @@ public sealed partial class AppState : ObservableObject
             return;
         }
 
+        AfterTreeChanged(tree);
+    }
+
+    /// <summary>Refreshes free space and status, tells the pages, re-analyzes and re-saves once.</summary>
+    private void AfterTreeChanged(ScanTree tree)
+    {
         long freeBefore = SelectedDrive?.FreeBytes ?? -1;
         var drive = RefreshVolumeStats();
         UpdateStatusForFinishedTree();
@@ -816,6 +822,59 @@ public sealed partial class AppState : ObservableObject
         if (Settings.RememberScans)
         {
             _ = Task.Run(() => SnapshotStore.Save(tree));
+        }
+    }
+
+    /// <summary>A "rescan this folder" is running (one at a time).</summary>
+    public bool IsRescanningFolder { get; private set; }
+
+    /// <summary>
+    /// Scans one folder again and puts the result in place of its old contents, without rescanning the
+    /// drive. Does nothing while a full scan runs, or when the tree was replaced in the meantime.
+    /// </summary>
+    public async Task<bool> RescanFolderAsync(ScanTree tree, int dirIndex)
+    {
+        if (tree != Tree || IsScanning || IsRescanningFolder || dirIndex == ScanTree.RootIndex || !tree.IsLiveDirectory(dirIndex))
+        {
+            return false;
+        }
+
+        string path = tree.GetPath(dirIndex);
+        long before = tree.Dir(dirIndex).TotalSize;
+        IsRescanningFolder = true;
+        StatusDetail = $"Rescanning {path}…";
+        try
+        {
+            var fresh = new ScanTree(path, tree.FileIndexThreshold);
+            int workers = Settings.Workers > 0 ? Settings.Workers : SelectedDrive?.RecommendedParallelism ?? 4;
+            await ScannerFactory.Create(Settings.Engine).ScanAsync(fresh, new ScanOptions { MaxParallelism = workers }, null, CancellationToken.None);
+
+            // A full scan may have started, or the folder may have been removed, while this one ran.
+            if (tree != Tree || IsScanning || !tree.IsLiveDirectory(dirIndex))
+            {
+                return false;
+            }
+
+            if (!Directory.Exists(path))
+            {
+                RemoveFromTree(tree, [(false, dirIndex)]);
+                return true;
+            }
+
+            int replaced = tree.ReplaceDirectory(dirIndex, fresh);
+            ErrorCount = tree.ErrorCount;
+            AfterTreeChanged(tree);
+            StatusDetail += $"  ·  Rescanned {path}: {SizeFormatter.Format(before)} \u2192 {SizeFormatter.Format(tree.Dir(replaced).TotalSize)}";
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            StatusDetail = $"Could not rescan {path}: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            IsRescanningFolder = false;
         }
     }
 

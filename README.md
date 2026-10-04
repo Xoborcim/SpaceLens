@@ -32,6 +32,9 @@ dotnet publish SpaceLens.App -c Release -o publish\SpaceLens
 add "Analyze with SpaceLens" to File Explorer's right-click menu for folders
 and drives.
 
+Right-click a folder and choose "Rescan this folder" to update just that folder
+in the results instead of rescanning the whole drive.
+
 Export (next to Rescan) saves the folders or the large files as CSV, or a full
 report as JSON. Sizes are in bytes and times are UTC (ISO 8601).
 

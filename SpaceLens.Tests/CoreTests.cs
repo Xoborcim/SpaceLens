@@ -123,6 +123,49 @@ public class ScanTreeTests
     }
 
     [Fact]
+    public void Replacing_a_directory_with_a_fresh_scan_fixes_ancestor_totals()
+    {
+        var tree = Sample();
+        long before = tree.Root.TotalSize;
+        int downloads = tree.FindDirectory(@"C:\Users\me\Downloads");
+
+        // Fresh scan of Downloads: the ISO is gone, a new folder with a 5 GB archive appeared.
+        var fresh = new ScanTree(@"C:\Users\me\Downloads");
+        int newFolder = fresh.AddDirectory(ScanTree.RootIndex, "Installers");
+        fresh.AddFile(newFolder, "big.zip", 5L << 30, FileCategory.Archive, 0);
+        fresh.CompleteDirectory(ScanTree.RootIndex, 4000, 3, 1);
+        fresh.CompleteDirectory(newFolder, 5L << 30, 1, 0);
+        fresh.AddCategoryTotals(Totals((FileCategory.Archive, 5L << 30), (FileCategory.Other, 4000)), Totals((FileCategory.Archive, 1), (FileCategory.Other, 3)));
+        fresh.RecordError(@"C:\Users\me\Downloads\locked", 5, "Access denied");
+
+        int replaced = tree.ReplaceDirectory(downloads, fresh);
+
+        Assert.False(tree.IsLiveDirectory(downloads));
+        Assert.Equal(replaced, tree.FindDirectory(@"C:\Users\me\Downloads"));
+        Assert.Equal((5L << 30) + 4000, tree.Dir(replaced).TotalSize);
+        Assert.Equal(4, tree.Dir(replaced).TotalFiles);
+        Assert.Equal(1, tree.Dir(replaced).TotalDirs);
+        Assert.Equal(before - ((8L << 30) + 5000) + (5L << 30) + 4000, tree.Root.TotalSize);
+        Assert.Equal(tree.Root.TotalSize, tree.Dir(tree.FindDirectory(@"C:\Users")).TotalSize + tree.Dir(tree.FindDirectory(@"C:\Games")).TotalSize);
+        Assert.Equal(1 + 1000 + 4, tree.Root.TotalFiles); // Videos, Games\Big, new Downloads
+        Assert.Equal(7, tree.Root.TotalDirs); // Users, me, Downloads, Installers, Videos, Games, Big
+        int zip = Assert.Single(tree.GetFiles(tree.FindDirectory(@"C:\Users\me\Downloads\Installers")));
+        Assert.Equal(@"C:\Users\me\Downloads\Installers\big.zip", tree.GetFilePath(zip));
+        Assert.Equal(5L << 30, tree.CategoryBytes[(int)FileCategory.Archive]);
+        Assert.Equal(1, tree.ErrorCount);
+
+        // The result survives a snapshot round trip with the same totals.
+        using var stream = new MemoryStream();
+        SnapshotSerializer.Save(tree, stream);
+        stream.Position = 0;
+        var loaded = SnapshotSerializer.Load(stream);
+        Assert.Equal(tree.Root.TotalSize, loaded.Root.TotalSize);
+        Assert.Equal(tree.Root.TotalFiles, loaded.Root.TotalFiles);
+        Assert.Equal(tree.Root.TotalDirs, loaded.Root.TotalDirs);
+        Assert.Throws<InvalidOperationException>(() => tree.ReplaceDirectory(ScanTree.RootIndex, fresh));
+    }
+
+    [Fact]
     public void Removing_a_directory_detaches_its_subtree()
     {
         var tree = Sample();
