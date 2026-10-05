@@ -8,6 +8,7 @@ using SpaceLens.Core.Aggregation;
 using SpaceLens.Core.Classification;
 using SpaceLens.Core.Formatting;
 using SpaceLens.Core.Models;
+using SpaceLens.Core.Visualization;
 using SpaceLens.Windows.FileSystem;
 
 namespace SpaceLens.App.Views;
@@ -17,6 +18,9 @@ public sealed partial class OverviewPage : Page
     private const int LargestItemCount = 10;
     private const int TreemapItemCount = 48;
     private int _refreshVersion;
+    private int _colorVersion;
+    private ScanTree? _mapTree;
+    private List<EntryItem> _mapEntries = [];
 
     public OverviewPage()
     {
@@ -249,15 +253,90 @@ public sealed partial class OverviewPage : Page
         }
 
         LargestList.ItemsSource = entries.Take(LargestItemCount).ToList();
-        Treemap.SetItems(entries.Select(e => (e, ColorFor(tree, e))).ToList());
+        _mapTree = tree;
+        _mapEntries = entries;
+        await ColorMapAsync();
     }
 
-    private uint ColorFor(ScanTree tree, EntryItem e) => e.Kind switch
+    private string MapMode => (MapColoring.SelectedItem as ComboBoxItem)?.Tag as string ?? "location";
+
+    private async void OnMapColoringChanged(object sender, SelectionChangedEventArgs e) => await ColorMapAsync();
+
+    /// <summary>
+    /// Colours the map cells. Location uses the analysis already in memory; file type and age walk each
+    /// cell's subtree, so they run on a background thread (the cells are disjoint: at most one pass over the tree).
+    /// </summary>
+    private async Task ColorMapAsync()
+    {
+        var tree = _mapTree;
+        var entries = _mapEntries;
+        if (tree is null || MapColoring is null)
+        {
+            return;
+        }
+
+        int version = ++_colorVersion;
+        string mode = MapMode;
+        uint[] colors;
+        if (mode == "location")
+        {
+            colors = entries.Select(e => LocationColor(tree, e)).ToArray();
+        }
+        else
+        {
+            var now = DateTime.UtcNow;
+            colors = await Task.Run(() => entries.Select(e => mode == "age" ? AgeColor(tree, e, now) : TypeColor(tree, e)).ToArray());
+        }
+
+        if (version != _colorVersion || tree != _mapTree)
+        {
+            return;
+        }
+
+        Treemap.SetItems(entries.Select((e, i) => (e, colors[i])).ToList());
+        UpdateLegend(mode);
+    }
+
+    private uint LocationColor(ScanTree tree, EntryItem e) => e.Kind switch
     {
         EntryKind.Directory => StorageNatureInfo.Color(State.CategoryOf(e.Index)),
         EntryKind.File => FileCategoryInfo.Color(tree.File(e.Index).Category),
-        _ => 0xFF8A8A8A,
+        _ => TreemapColoring.UnknownColor,
     };
+
+    private static uint TypeColor(ScanTree tree, EntryItem e) => e.Kind switch
+    {
+        EntryKind.Directory => TreemapColoring.DominantCategory(tree, e.Index) is { } category ? FileCategoryInfo.Color(category) : TreemapColoring.UnknownColor,
+        EntryKind.File => FileCategoryInfo.Color(tree.File(e.Index).Category),
+        _ => TreemapColoring.UnknownColor,
+    };
+
+    private static uint AgeColor(ScanTree tree, EntryItem e, DateTime nowUtc) => e.Kind switch
+    {
+        EntryKind.Directory => TreemapColoring.AgeColor(TreemapColoring.NewestWriteUtc(tree, e.Index), nowUtc),
+        EntryKind.File => TreemapColoring.AgeColor(tree.File(e.Index).LastWriteUtc, nowUtc),
+        _ => TreemapColoring.UnknownColor,
+    };
+
+    /// <summary>Age bands need a legend; location and file type colours match the swatches in their own lists.</summary>
+    private void UpdateLegend(string mode)
+    {
+        MapLegend.Children.Clear();
+        MapLegend.Visibility = mode == "age" ? Visibility.Visible : Visibility.Collapsed;
+        if (mode != "age")
+        {
+            return;
+        }
+
+        MapLegend.Children.Add(new TextBlock { Text = "Last change:", Style = (Style)Application.Current.Resources["SecondaryTextStyle"], VerticalAlignment = VerticalAlignment.Center });
+        foreach (var (label, _, color) in TreemapColoring.AgeBands)
+        {
+            var swatch = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            swatch.Children.Add(new Border { Width = 12, Height = 12, CornerRadius = new CornerRadius(3), Background = SummaryItem.BrushFromArgb(color), VerticalAlignment = VerticalAlignment.Center });
+            swatch.Children.Add(new TextBlock { Text = label, Style = (Style)Application.Current.Resources["SecondaryTextStyle"], VerticalAlignment = VerticalAlignment.Center });
+            MapLegend.Children.Add(swatch);
+        }
+    }
 
     private bool RevealInFolders(EntryItem item)
     {

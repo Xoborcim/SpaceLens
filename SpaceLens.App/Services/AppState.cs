@@ -250,6 +250,7 @@ public sealed partial class AppState : ObservableObject
         RefreshVolumeStats(tree.RootPath);
         UpdateStatusForFinishedTree();
         ResetAnalysis();
+        ClearBasket();
         TreeReplaced?.Invoke(this, EventArgs.Empty);
         if (StartupSnapshotMs == 0)
         {
@@ -324,6 +325,7 @@ public sealed partial class AppState : ObservableObject
         State = ScanState.Scanning;
         StatusTitle = $"Scanning {root}";
         UpdateProgress();
+        ClearBasket();
         TreeReplaced?.Invoke(this, EventArgs.Empty);
         _timer.Start();
 
@@ -382,7 +384,7 @@ public sealed partial class AppState : ObservableObject
             await Task.Run(() =>
             {
                 DriveService.FillVolumeMetadata(tree);
-                SnapshotStore.Save(tree);
+                SnapshotStore.SaveScan(tree);
             });
         }
 
@@ -762,13 +764,18 @@ public sealed partial class AppState : ObservableObject
     // Mutation
     // ---------------------------------------------------------------------------------------------
 
-    public void RemoveFromTree(bool isFile, int index) => RemoveFromTree([(isFile, index)]);
+    public void RemoveFromTree(ScanTree tree, bool isFile, int index) => RemoveFromTree(tree, [(isFile, index)]);
 
-    /// <summary>Removes items that no longer exist on disk, then re-analyzes and re-saves once.</summary>
-    public void RemoveFromTree(IEnumerable<(bool IsFile, int Index)> items)
+    /// <summary>
+    /// Removes items that no longer exist on disk, then re-analyzes and re-saves once.
+    /// <paramref name="tree"/> is the tree the indices came from. Removals finish asynchronously (Recycle
+    /// Bin, uninstallers), and a rescan may have replaced the tree in the meantime: indices from the old
+    /// tree mean nothing in the new one, and a tree being scanned must not be modified. In both cases the
+    /// removal is skipped; the new scan already reflects the disk.
+    /// </summary>
+    public void RemoveFromTree(ScanTree tree, IEnumerable<(bool IsFile, int Index)> items)
     {
-        var tree = Tree;
-        if (tree is null)
+        if (tree != Tree || IsScanning)
         {
             return;
         }
@@ -798,6 +805,12 @@ public sealed partial class AppState : ObservableObject
             return;
         }
 
+        AfterTreeChanged(tree);
+    }
+
+    /// <summary>Refreshes free space and status, tells the pages, re-analyzes and re-saves once.</summary>
+    private void AfterTreeChanged(ScanTree tree)
+    {
         long freeBefore = SelectedDrive?.FreeBytes ?? -1;
         var drive = RefreshVolumeStats();
         UpdateStatusForFinishedTree();
@@ -806,11 +819,134 @@ public sealed partial class AppState : ObservableObject
             StatusDetail += $"  ·  Freed {SizeFormatter.Format(drive.FreeBytes - freeBefore)}";
         }
 
+        PruneBasket();
         TreeMutated?.Invoke(this, EventArgs.Empty);
         _ = AnalyzeAsync(tree);
         if (Settings.RememberScans)
         {
             _ = Task.Run(() => SnapshotStore.Save(tree));
+        }
+    }
+
+    /// <summary>A "rescan this folder" is running (one at a time).</summary>
+    public bool IsRescanningFolder { get; private set; }
+
+    /// <summary>
+    /// Scans one folder again and puts the result in place of its old contents, without rescanning the
+    /// drive. Does nothing while a full scan runs, or when the tree was replaced in the meantime.
+    /// </summary>
+    public async Task<bool> RescanFolderAsync(ScanTree tree, int dirIndex)
+    {
+        if (tree != Tree || IsScanning || IsRescanningFolder || dirIndex == ScanTree.RootIndex || !tree.IsLiveDirectory(dirIndex))
+        {
+            return false;
+        }
+
+        string path = tree.GetPath(dirIndex);
+        long before = tree.Dir(dirIndex).TotalSize;
+        IsRescanningFolder = true;
+        StatusDetail = $"Rescanning {path}…";
+        try
+        {
+            var fresh = new ScanTree(path, tree.FileIndexThreshold);
+            int workers = Settings.Workers > 0 ? Settings.Workers : SelectedDrive?.RecommendedParallelism ?? 4;
+            await ScannerFactory.Create(Settings.Engine).ScanAsync(fresh, new ScanOptions { MaxParallelism = workers }, null, CancellationToken.None);
+
+            // A full scan may have started, or the folder may have been removed, while this one ran.
+            if (tree != Tree || IsScanning || !tree.IsLiveDirectory(dirIndex))
+            {
+                return false;
+            }
+
+            if (!Directory.Exists(path))
+            {
+                RemoveFromTree(tree, [(false, dirIndex)]);
+                return true;
+            }
+
+            int replaced = tree.ReplaceDirectory(dirIndex, fresh);
+            ErrorCount = tree.ErrorCount;
+            AfterTreeChanged(tree);
+            StatusDetail += $"  ·  Rescanned {path}: {SizeFormatter.Format(before)} \u2192 {SizeFormatter.Format(tree.Dir(replaced).TotalSize)}";
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            StatusDetail = $"Could not rescan {path}: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            IsRescanningFolder = false;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Cleanup basket
+    // ---------------------------------------------------------------------------------------------
+
+    private readonly List<(bool IsFile, int Index)> _basket = [];
+
+    /// <summary>Items collected for removal from any page, as (isFile, index) in <see cref="Tree"/>.</summary>
+    public IReadOnlyList<(bool IsFile, int Index)> Basket => _basket;
+
+    public event EventHandler? BasketChanged;
+
+    public bool IsInBasket(bool isFile, int index) => _basket.Contains((isFile, index));
+
+    public void AddToBasket(ScanTree tree, IEnumerable<(bool IsFile, int Index)> items)
+    {
+        if (tree != Tree)
+        {
+            return;
+        }
+
+        int before = _basket.Count;
+        foreach (var item in items)
+        {
+            if ((item.IsFile ? tree.IsLiveFile(item.Index) : tree.IsLiveDirectory(item.Index) && item.Index != ScanTree.RootIndex) && !_basket.Contains(item))
+            {
+                _basket.Add(item);
+            }
+        }
+
+        if (_basket.Count != before)
+        {
+            BasketChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void RemoveFromBasket(IEnumerable<(bool IsFile, int Index)> items)
+    {
+        int removed = 0;
+        foreach (var item in items)
+        {
+            removed += _basket.Remove(item) ? 1 : 0;
+        }
+
+        if (removed > 0)
+        {
+            BasketChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void ClearBasket()
+    {
+        if (_basket.Count > 0)
+        {
+            _basket.Clear();
+            BasketChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>Drops items that were removed (or whose folder was removed or rescanned) from the basket.</summary>
+    private void PruneBasket()
+    {
+        var tree = Tree;
+        int removed = _basket.RemoveAll(i => tree is null || (i.IsFile ? !tree.IsLiveFile(i.Index) : !tree.IsLiveDirectory(i.Index)));
+        if (removed > 0)
+        {
+            BasketChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 

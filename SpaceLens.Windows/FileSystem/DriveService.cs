@@ -105,6 +105,29 @@ public static class DriveService
         }
     }
 
+    /// <summary>
+    /// True when deleting with FOF_ALLOWUNDO on this path's drive really goes to the Recycle Bin. Windows
+    /// keeps Recycle Bins on fixed drives only; on removable, network and other drives the shell deletes
+    /// permanently. Anything that cannot be identified is treated as having no Recycle Bin.
+    /// </summary>
+    public static bool HasRecycleBin(string path)
+    {
+        string? root = Path.GetPathRoot(PathUtil.NormalizeDisplayPath(path));
+        if (string.IsNullOrEmpty(root) || root.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        try
+        {
+            return new DriveInfo(root).DriveType == DriveType.Fixed;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     private static DriveDescriptor Describe(DriveInfo drive, string systemRoot)
     {
         string root = PathUtil.NormalizeDisplayPath(drive.RootDirectory.FullName);

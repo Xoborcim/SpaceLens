@@ -47,6 +47,46 @@ internal static unsafe partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetFileInformationByHandleEx(SafeFileHandle file, int fileInformationClass, void* buffer, uint bufferSize);
 
+    public const uint FILE_READ_ATTRIBUTES = 0x0080;
+
+    /// <summary>Open the reparse point itself: never follows a link and never recalls a cloud file.</summary>
+    public const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+
+    /// <summary>FILE_INFO_BY_HANDLE_CLASS.FileAttributeTagInfo: FILE_ATTRIBUTE_TAG_INFO { FileAttributes, ReparseTag }.</summary>
+    public const int FileAttributeTagInfo = 9;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FileAttributeTagInformation
+    {
+        public uint FileAttributes;
+        public uint ReparseTag;
+    }
+
+    /// <summary>BY_HANDLE_FILE_INFORMATION: https://learn.microsoft.com/windows/win32/api/fileapi/ns-fileapi-by_handle_file_information</summary>
+    /// FILETIME members are pairs of DWORDs, so the structure is 4-byte aligned (52 bytes).
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    public struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public long CreationTime;
+        public long LastAccessTime;
+        public long LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
+    /// <summary>
+    /// GetFileInformationByHandle: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle
+    /// The volume serial number and file index identify a file; hard links share them.
+    /// </summary>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetFileInformationByHandle(SafeFileHandle file, out ByHandleFileInformation information);
+
     public const int FindExInfoBasic = 1;          // skip 8.3 short names
     public const int FindExSearchNameMatch = 0;
     public const int FIND_FIRST_EX_LARGE_FETCH = 2; // larger internal buffer for directory queries

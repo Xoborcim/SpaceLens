@@ -87,6 +87,20 @@ public sealed class SafetyPolicy
 {
     private readonly KnownLocations _known;
     private readonly string[] _essentialRoots;
+    private readonly string[] _settingsFolders;
+
+    /// <summary>Folders Windows creates in every profile. In another user's profile they are protected like our own.</summary>
+    private static readonly HashSet<string> ProfileFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "AppData", "Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos", "OneDrive", "Favorites",
+        "Saved Games", "Contacts", "Links", "Searches", "3D Objects",
+    };
+
+    /// <summary>Profiles Windows itself maintains: the template for new accounts and legacy compatibility links.</summary>
+    private static readonly HashSet<string> SystemProfileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Default", "Default User", "All Users",
+    };
 
     private static readonly Dictionary<string, (string Label, string Explanation, string? Advice)> SystemRootFiles =
         new(StringComparer.OrdinalIgnoreCase)
@@ -157,6 +171,16 @@ public sealed class SafetyPolicy
         .Select(PathUtil.NormalizeDisplayPath)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
+
+        // Protected folders whose loose files are settings or program data rather than user documents.
+        _settingsFolders = new[]
+        {
+            known.UsersDirectory, known.UserProfile, Path.Combine(known.UserProfile, "AppData"), known.LocalAppData,
+            known.RoamingAppData, known.ProgramData, Path.Combine(known.LocalAppData, "Packages"),
+        }
+        .Where(p => !string.IsNullOrEmpty(p))
+        .Select(PathUtil.NormalizeDisplayPath)
+        .ToArray();
     }
 
     public KnownLocations Known => _known;
@@ -177,6 +201,11 @@ public sealed class SafetyPolicy
             {
                 return Protected("Essential folder", "This folder is required by Windows or by your user profile. Its contents can be reviewed individually.");
             }
+        }
+
+        if (AssessOtherProfile(path) is { } profileAssessment)
+        {
+            return profileAssessment;
         }
 
         string name = PathUtil.GetName(path);
@@ -276,6 +305,19 @@ public sealed class SafetyPolicy
             {
                 return parentAssessment;
             }
+
+            if (PathUtil.IsSameOrUnder(parent, _known.TempDirectory))
+            {
+                return new SafetyAssessment(ProtectionLevel.Caution, "Temporary",
+                    "Temporary files. Programs that are running may still be using some of them.",
+                    "Settings > System > Storage > Temporary files can remove these safely.");
+            }
+
+            if (IsSettingsFolder(parent))
+            {
+                return new SafetyAssessment(ProtectionLevel.Caution, "Settings or program data",
+                    $"This file is directly inside {PathUtil.GetName(parent)}, where Windows and programs keep settings and data. Deleting it can reset or break a program.");
+            }
         }
 
         if ((attributes & FileAttributes.System) != 0)
@@ -284,6 +326,76 @@ public sealed class SafetyPolicy
         }
 
         return SafetyAssessment.Ordinary;
+    }
+
+    /// <summary>
+    /// Rules for profiles other than the current user's: other accounts, Public, and the Default template.
+    /// Returns null for paths outside those profiles, or for ordinary content inside them.
+    /// </summary>
+    private SafetyAssessment? AssessOtherProfile(string path)
+    {
+        if (!PathUtil.IsStrictlyUnder(path, _known.UsersDirectory) || PathUtil.IsSameOrUnder(path, _known.UserProfile))
+        {
+            return null;
+        }
+
+        string users = PathUtil.NormalizeDisplayPath(_known.UsersDirectory);
+        string[] segments = path[(users.Length + 1)..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return null;
+        }
+
+        string profile = segments[0];
+        if (SystemProfileNames.Contains(profile))
+        {
+            return Protected("Default user profile", "Template Windows copies when a new user account is created.") with { IsSystemManaged = true };
+        }
+
+        bool isPublic = profile.Equals("Public", StringComparison.OrdinalIgnoreCase);
+        if (segments.Length == 1)
+        {
+            return isPublic
+                ? Protected("Public folder", "Shared folder that Windows provides for all users of this PC. Its contents can be reviewed individually.")
+                : Protected("User profile", "The profile of another user account on this PC. Its contents can be reviewed individually.",
+                    "To remove an account and its files, use Settings > Accounts > Other users.");
+        }
+
+        if (segments.Length == 2 && (isPublic || ProfileFolderNames.Contains(segments[1])))
+        {
+            return Protected("Essential folder", "This folder is part of a user profile. Its contents can be reviewed individually.");
+        }
+
+        if (segments[1].Equals("AppData", StringComparison.OrdinalIgnoreCase))
+        {
+            return new SafetyAssessment(ProtectionLevel.Caution, "Application data",
+                "Settings, caches or data of an application used by another account. Removing it may reset the application or lose data.");
+        }
+
+        return null;
+    }
+
+    private bool IsSettingsFolder(string folder)
+    {
+        folder = PathUtil.NormalizeDisplayPath(folder);
+        foreach (var settings in _settingsFolders)
+        {
+            if (folder.Equals(settings, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        // The root or the AppData folder of another profile.
+        if (PathUtil.IsStrictlyUnder(folder, _known.UsersDirectory))
+        {
+            string users = PathUtil.NormalizeDisplayPath(_known.UsersDirectory);
+            string[] segments = folder[(users.Length + 1)..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            return segments.Length == 1 && !segments[0].Equals("Public", StringComparison.OrdinalIgnoreCase) ||
+                   segments.Length == 2 && segments[1].Equals("AppData", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private static SafetyAssessment Protected(string label, string explanation, string? advice = null) =>

@@ -36,6 +36,9 @@ public sealed partial class EntryItem : ObservableObject
 
     public EntryKind Kind { get; }
 
+    /// <summary>The scan tree <see cref="Index"/> refers to (null for rows that are not part of a tree).</summary>
+    public ScanTree? Tree { get; private init; }
+
     /// <summary>Directory index (Directory, LooseFiles) or file index (File).</summary>
     public int Index { get; }
 
@@ -129,7 +132,7 @@ public sealed partial class EntryItem : ObservableObject
 
     public static EntryItem ForDirectory(ScanTree tree, int index, long parentSize = 0, int depth = 0, EntryItem? parent = null)
     {
-        var item = new EntryItem(EntryKind.Directory, index) { Depth = depth, ParentItem = parent };
+        var item = new EntryItem(EntryKind.Directory, index) { Tree = tree, Depth = depth, ParentItem = parent };
         ref var node = ref tree.Dir(index);
         item.Name = index == ScanTree.RootIndex ? tree.RootPath : node.Name;
         item.Path = tree.GetPath(index);
@@ -153,7 +156,7 @@ public sealed partial class EntryItem : ObservableObject
 
     public static EntryItem ForFile(ScanTree tree, int index, long parentSize = 0, int depth = 0, EntryItem? parent = null)
     {
-        var item = new EntryItem(EntryKind.File, index) { Depth = depth, ParentItem = parent };
+        var item = new EntryItem(EntryKind.File, index) { Tree = tree, Depth = depth, ParentItem = parent };
         ref var file = ref tree.File(index);
         item.Name = file.Name;
         item.ParentPath = tree.GetPath(file.Directory);
@@ -174,7 +177,7 @@ public sealed partial class EntryItem : ObservableObject
 
     public static EntryItem ForLooseFiles(ScanTree tree, int dirIndex, long parentSize = 0, int depth = 0, EntryItem? parent = null)
     {
-        var item = new EntryItem(EntryKind.LooseFiles, dirIndex) { Depth = depth, ParentItem = parent };
+        var item = new EntryItem(EntryKind.LooseFiles, dirIndex) { Tree = tree, Depth = depth, ParentItem = parent };
         item.ParentPath = tree.GetPath(dirIndex);
         item.Path = item.ParentPath;
         item.Glyph = "\uE8B9";

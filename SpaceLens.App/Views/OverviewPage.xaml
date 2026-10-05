@@ -165,8 +165,20 @@
 
                 <Border Grid.Row="2" Grid.ColumnSpan="2" Style="{StaticResource CardStyle}">
                     <StackPanel>
-                        <TextBlock Text="Map" Style="{StaticResource SectionTitleStyle}" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Map" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                            <ComboBox x:Name="MapColoring" Grid.Column="1" MinWidth="160" Margin="0,0,0,8" SelectionChanged="OnMapColoringChanged" AutomationProperties.Name="Colour the map by">
+                                <ComboBoxItem Content="Colour by location" Tag="location" IsSelected="True" />
+                                <ComboBoxItem Content="Colour by file type" Tag="type" />
+                                <ComboBoxItem Content="Colour by age" Tag="age" />
+                            </ComboBox>
+                        </Grid>
                         <controls:TreemapControl x:Name="Treemap" Height="340" CellInvoked="OnTreemapCellInvoked" />
+                        <StackPanel x:Name="MapLegend" Orientation="Horizontal" Spacing="16" Margin="0,10,0,0" Visibility="Collapsed" />
                     </StackPanel>
                 </Border>
             </Grid>

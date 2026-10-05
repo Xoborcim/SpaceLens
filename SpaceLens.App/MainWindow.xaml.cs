@@ -19,6 +19,9 @@ public sealed partial class MainWindow : Window
         ["apps"] = typeof(AppsPage),
         ["folders"] = typeof(FoldersPage),
         ["largefiles"] = typeof(LargeFilesPage),
+        ["changes"] = typeof(ChangesPage),
+        ["duplicates"] = typeof(DuplicatesPage),
+        ["basket"] = typeof(BasketPage),
         ["filetypes"] = typeof(FileTypesPage),
         ["storage"] = typeof(StoragePage),
         ["developer"] = typeof(DevFilesPage),
@@ -55,9 +58,19 @@ public sealed partial class MainWindow : Window
         _searchDebounce.Tick += (_, _) => RunSearch(SearchBox.Text);
 
         State.PropertyChanged += OnStatePropertyChanged;
-        State.NavigationRequested += (_, request) => Navigate(request.Page, request.Parameter);
+        State.NavigationRequested += (_, request) =>
+        {
+            // A saved search was run: show its text in the search box too.
+            if (request.Page == "search" && request.Parameter is string query)
+            {
+                SearchBox.Text = query;
+            }
+
+            Navigate(request.Page, request.Parameter);
+        };
         State.TreeReplaced += (_, _) => UpdateChrome();
         State.ScanFinished += (_, _) => UpdateChrome();
+        State.BasketChanged += (_, _) => UpdateChrome();
 
         RootGrid.Loaded += OnLoaded;
     }
@@ -116,8 +129,11 @@ public sealed partial class MainWindow : Window
     private void UpdateChrome()
     {
         RescanButton.Visibility = State.HasResults && !State.IsScanning ? Visibility.Visible : Visibility.Collapsed;
+        ExportButton.Visibility = RescanButton.Visibility;
         IssuesNavItem.Visibility = State.ErrorCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         IssuesBadge.Value = State.ErrorCount;
+        BasketBadge.Value = State.Basket.Count;
+        BasketBadge.Visibility = State.Basket.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -255,6 +271,72 @@ public sealed partial class MainWindow : Window
         {
             state.StartScan(folder.Path);
             state.RequestNavigation("folders");
+        }
+    }
+
+    /// <summary>Saves folders (CSV), large files (CSV) or a full report (JSON) to a file the user picks.</summary>
+    private async void OnExportClick(object sender, RoutedEventArgs e)
+    {
+        var tree = State.Tree;
+        if (tree is null || State.IsScanning || (sender as FrameworkElement)?.Tag is not string kind)
+        {
+            return;
+        }
+
+        string root = new string(tree.RootPath.Where(char.IsLetterOrDigit).ToArray());
+        var picker = new global::Windows.Storage.Pickers.FileSavePicker
+        {
+            SuggestedStartLocation = global::Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = $"SpaceLens {root} {kind} {DateTime.Now:yyyy-MM-dd}",
+        };
+        if (kind == "json")
+        {
+            picker.FileTypeChoices.Add("JSON", [".json"]);
+        }
+        else
+        {
+            picker.FileTypeChoices.Add("CSV (spreadsheet)", [".csv"]);
+        }
+
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, State.WindowHandle);
+        var file = await picker.PickSaveFileAsync();
+        if (file is null)
+        {
+            return;
+        }
+
+        string path = file.Path;
+        try
+        {
+            await Task.Run(() =>
+            {
+                // Removals on the UI thread take this lock; the export reads a consistent tree.
+                lock (tree.SyncRoot)
+                {
+                    using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+                    if (kind == "json")
+                    {
+                        Core.Export.ReportExporter.WriteJson(tree, stream);
+                        return;
+                    }
+
+                    // UTF-8 with a byte order mark so Excel detects the encoding of non-ASCII names.
+                    using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                    if (kind == "folders")
+                    {
+                        Core.Export.ReportExporter.WriteFoldersCsv(tree, writer);
+                    }
+                    else
+                    {
+                        Core.Export.ReportExporter.WriteFilesCsv(tree, writer);
+                    }
+                }
+            });
+            State.StatusDetail = $"Exported to {path}";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await ItemActions.ShowMessageAsync("The export could not be saved", ex.Message);
         }
     }
 

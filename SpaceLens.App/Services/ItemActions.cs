@@ -5,6 +5,7 @@ using SpaceLens.App.ViewModels;
 using SpaceLens.Core.Classification;
 using SpaceLens.Core.Formatting;
 using SpaceLens.Core.Safety;
+using SpaceLens.Windows.FileSystem;
 using SpaceLens.Windows.Shell;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
@@ -15,6 +16,10 @@ namespace SpaceLens.App.Services;
 public static class ItemActions
 {
     private static AppState State => AppState.Current;
+
+    // A removal is waiting on a dialog or on the shell. A second Delete press would otherwise open a
+    // second confirmation for the same items.
+    private static bool _removalInProgress;
 
     public static void Open(EntryItem item)
     {
@@ -64,13 +69,38 @@ public static class ItemActions
     /// <summary>Moves items to the Recycle Bin after an explicit confirmation that shows sizes and any warnings.</summary>
     public static async Task<bool> RecycleAsync(IReadOnlyList<EntryItem> items)
     {
-        items = items.Where(i => i.Kind is EntryKind.Directory or EntryKind.File && !IsScanRoot(i) && !i.IsReparsePoint).ToList();
-        var selectedFolders = items.Where(i => i.IsDirectory).Select(i => i.Path).ToList();
-        items = items.Where(i => !selectedFolders.Any(f => Core.Models.PathUtil.IsStrictlyUnder(i.Path, f))).ToList();
-        if (items.Count == 0 || !State.CanModify)
+        if (_removalInProgress)
         {
             return false;
         }
+
+        _removalInProgress = true;
+        try
+        {
+            return await RecycleCoreAsync(items);
+        }
+        finally
+        {
+            _removalInProgress = false;
+        }
+    }
+
+    private static async Task<bool> RecycleCoreAsync(IReadOnlyList<EntryItem> items)
+    {
+        var tree = State.Tree;
+        items = items.Where(i => i.Kind is EntryKind.Directory or EntryKind.File && i.Tree == tree && !IsScanRoot(i) && !i.IsReparsePoint).ToList();
+        var selectedFolders = items.Where(i => i.IsDirectory).Select(i => i.Path).ToList();
+        items = items.Where(i => !selectedFolders.Any(f => Core.Models.PathUtil.IsStrictlyUnder(i.Path, f))).ToList();
+        if (tree is null || items.Count == 0 || !State.CanModify)
+        {
+            return false;
+        }
+
+        // Removable and network drives normally have no Recycle Bin: the shell deletes permanently there.
+        // A selection can mix both kinds of drive; the dialog says which items are deleted permanently.
+        var noRecycleBin = items.Select(i => i.Path).Where(p => !DriveService.HasRecycleBin(p)).ToList();
+        bool anyPermanent = noRecycleBin.Count > 0;
+        bool allPermanent = noRecycleBin.Count == items.Count;
 
         var blocked = items.Where(i => !IsRemovable(i)).ToList();
         if (blocked.Count > 0)
@@ -115,22 +145,60 @@ public static class ItemActions
             content.Children.Add(new TextBlock { Text = explanation, TextWrapping = TextWrapping.Wrap });
         }
 
-        content.Children.Add(new TextBlock
+        CheckBox? acknowledge = null;
+        if (anyPermanent)
         {
-            Text = "You can restore items from the Recycle Bin until it is emptied.",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.8,
-        });
+            var drives = noRecycleBin.Select(p => Path.GetPathRoot(p)?.TrimEnd('\\') ?? p).Distinct(StringComparer.OrdinalIgnoreCase);
+            string which = allPermanent
+                ? $"Items on {string.Join(", ", drives)} will be deleted permanently and cannot be restored."
+                : $"{noRecycleBin.Count} of the {items.Count} items are on {string.Join(", ", drives)} and will be deleted permanently:\n" +
+                  string.Join("\n", noRecycleBin.Take(5)) + (noRecycleBin.Count > 5 ? $"\n… and {noRecycleBin.Count - 5} more" : "") +
+                  "\nThe other items go to the Recycle Bin.";
+            content.Children.Add(new InfoBar
+            {
+                IsOpen = true,
+                IsClosable = false,
+                Severity = InfoBarSeverity.Error,
+                Title = allPermanent ? "This drive has no Recycle Bin" : "Some items cannot go to the Recycle Bin",
+                Message = which,
+            });
+            acknowledge = new CheckBox
+            {
+                Content = allPermanent ? "I understand these items cannot be recovered." : "I understand the items listed above cannot be recovered.",
+            };
+            content.Children.Add(acknowledge);
+        }
+
+        if (!allPermanent)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = anyPermanent
+                    ? "Items moved to the Recycle Bin can be restored until it is emptied."
+                    : "You can restore items from the Recycle Bin until it is emptied.",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.8,
+            });
+        }
 
         var dialog = new ContentDialog
         {
-            Title = items.Count == 1 ? "Move to Recycle Bin?" : $"Move {items.Count} items to the Recycle Bin?",
+            Title = allPermanent
+                ? (items.Count == 1 ? "Delete permanently?" : $"Delete {items.Count} items permanently?")
+                : (items.Count == 1 ? "Move to Recycle Bin?" : $"Move {items.Count} items to the Recycle Bin?"),
             Content = new ScrollViewer { Content = content, MaxHeight = 420 },
-            PrimaryButtonText = "Move to Recycle Bin",
+            PrimaryButtonText = allPermanent ? "Delete permanently" : anyPermanent ? "Remove" : "Move to Recycle Bin",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
+            IsPrimaryButtonEnabled = !anyPermanent,
             XamlRoot = State.XamlRoot,
         };
+
+        if (acknowledge is not null)
+        {
+            acknowledge.Checked += (_, _) => dialog.IsPrimaryButtonEnabled = true;
+            acknowledge.Unchecked += (_, _) => dialog.IsPrimaryButtonEnabled = false;
+        }
 
         if (await ItemActions.ShowDialogAsync(dialog) != ContentDialogResult.Primary)
         {
@@ -139,11 +207,11 @@ public static class ItemActions
 
         long freeBefore = State.SelectedDrive?.FreeBytes ?? -1;
         var result = await State.Shell.MoveToRecycleBinAsync(items.Select(i => (i.Path, i.IsDirectory)).ToList(), State.WindowHandle);
-        State.RemoveFromTree(items
+        State.RemoveFromTree(tree, items
             .Where(i => i.IsDirectory ? !Directory.Exists(i.Path) : !File.Exists(i.Path))
             .Select(i => (i.IsFile, i.Index))
             .ToList());
-        if (result.Success && freeBefore >= 0 && State.SelectedDrive is { } drive && drive.FreeBytes <= freeBefore)
+        if (result.Success && !anyPermanent && freeBefore >= 0 && State.SelectedDrive is { } drive && drive.FreeBytes <= freeBefore)
         {
             State.StatusDetail += "  ·  Free space is unchanged until the Recycle Bin is emptied";
         }
@@ -159,7 +227,25 @@ public static class ItemActions
     /// <summary>Permanent deletion of a single file, behind a second explicit acknowledgement.</summary>
     public static async Task<bool> DeletePermanentlyAsync(EntryItem item)
     {
-        if (item.Kind != EntryKind.File || !State.CanModify)
+        if (_removalInProgress)
+        {
+            return false;
+        }
+
+        _removalInProgress = true;
+        try
+        {
+            return await DeletePermanentlyCoreAsync(item);
+        }
+        finally
+        {
+            _removalInProgress = false;
+        }
+    }
+
+    private static async Task<bool> DeletePermanentlyCoreAsync(EntryItem item)
+    {
+        if (item.Kind != EntryKind.File || item.Tree is not { } tree || tree != State.Tree || !State.CanModify)
         {
             return false;
         }
@@ -201,12 +287,69 @@ public static class ItemActions
         var result = State.Shell.DeleteFilePermanently(item.Path);
         if (result.Success)
         {
-            State.RemoveFromTree(true, item.Index);
+            State.RemoveFromTree(tree, true, item.Index);
             return true;
         }
 
         await ShowMessageAsync("The file was not deleted", result.Error ?? "Unknown error.");
         return false;
+    }
+
+    /// <summary>
+    /// Marks a cloud-synced file or folder online-only (File Explorer's "Free up space"). Nothing is deleted:
+    /// the provider removes the local copy in the background and downloads it again when it is opened.
+    /// Afterwards the folder is rescanned so the freed space shows up.
+    /// </summary>
+    public static async Task FreeUpSpaceAsync(EntryItem item)
+    {
+        if (item.Kind is not (EntryKind.Directory or EntryKind.File) || item.Tree is not { } tree || tree != State.Tree || !State.CanModify)
+        {
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "Free up space?",
+            Content = new TextBlock
+            {
+                Text = $"{item.Path}\n\nThe {(item.IsDirectory ? "files in this folder stay" : "file stays")} in the cloud and {(item.IsDirectory ? "are" : "is")} downloaded again when opened, " +
+                       "but will not be available without an internet connection. This is the same as \"Free up space\" in File Explorer; nothing is deleted.",
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 480,
+            },
+            PrimaryButtonText = "Free up space",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = State.XamlRoot,
+        };
+
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        string path = item.Path;
+        FreeUpResult result;
+        try
+        {
+            result = await Task.Run(() => CloudFiles.FreeUpSpace(path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await ShowMessageAsync("Space was not freed", ex.Message);
+            return;
+        }
+
+        State.StatusDetail = $"{SizeFormatter.FormatCount(result.Changed)} files set to online-only; the cloud provider frees the space in the background" +
+            (result.Failed > 0 ? $"  ·  {SizeFormatter.FormatCount(result.Failed)} items could not be changed" : "");
+
+        // Give the provider a moment, then measure again.
+        int folder = item.IsDirectory ? item.Index : tree.File(item.Index).Directory;
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (folder != Core.Models.ScanTree.RootIndex && tree == State.Tree && tree.IsLiveDirectory(folder))
+        {
+            await State.RescanFolderAsync(tree, folder);
+        }
     }
 
     /// <summary>Explains why SpaceLens will not delete an item and offers the legitimate alternative, if any.</summary>
@@ -348,12 +491,22 @@ public static class ItemActions
                 menu.Items.Add(new MenuFlyoutSeparator());
                 Add("Show in Folders", "\uE8B7", () => State.RequestNavigation("folders", item));
                 Add("Scan this folder", "\uE721", () => ScanFolder(item), enabled: !State.IsScanning);
+                if (item.Index != Core.Models.ScanTree.RootIndex && item.Tree is { } tree)
+                {
+                    Add("Rescan this folder", "\uE72C", () => _ = State.RescanFolderAsync(tree, item.Index),
+                        enabled: !State.IsScanning && !State.IsRescanningFolder && tree == State.Tree);
+                }
             }
 
             var app = item.Kind == EntryKind.Directory ? State.FindAppForPath(item.Path) : null;
             if (app is not null)
             {
                 Add($"Uninstall {app.Name}…", "\uE74D", () => State.RequestNavigation("apps", app), enabled: State.CanModify);
+            }
+
+            if (item.Kind is EntryKind.Directory or EntryKind.File && !item.IsReparsePoint && CloudFiles.IsInSyncRoot(item.Path))
+            {
+                Add("Free up space (online-only)", "\uE753", () => _ = FreeUpSpaceAsync(item), enabled: State.CanModify);
             }
 
             if (item.Finding?.ActionUri is { } uri && item.Finding.ActionLabel is { } label && !uri.StartsWith("spacelens:", StringComparison.Ordinal))
@@ -368,6 +521,17 @@ public static class ItemActions
             bool canRecycle = targets.All(CanRecycle);
             Add(targets.Count == 1 ? "Move to Recycle Bin" : $"Move {targets.Count} items to Recycle Bin", "\uE74D",
                 () => _ = RecycleAsync(targets), enabled: canRecycle, accel: new("Del"));
+            var keys = targets.Select(t => (t.IsFile, t.Index)).ToList();
+            if (keys.All(k => State.IsInBasket(k.IsFile, k.Index)))
+            {
+                Add("Remove from cleanup basket", "\uE738", () => State.RemoveFromBasket(keys));
+            }
+            else if (item.Tree is { } basketTree)
+            {
+                Add(targets.Count == 1 ? "Add to cleanup basket" : $"Add {targets.Count} items to cleanup basket", "\uE719",
+                    () => State.AddToBasket(basketTree, keys), enabled: targets.All(CanRecycle));
+            }
+
             if (!targets.All(IsRemovable))
             {
                 Add("Why can't this be removed?", "\uE897", () => _ = ShowProtectedAsync(targets.First(t => !IsRemovable(t))));

@@ -111,7 +111,7 @@ public sealed class ParallelDirectoryScanner : IDiskScanner
             }
             catch (Exception ex)
             {
-                _fatal ??= ex;
+                Interlocked.CompareExchange(ref _fatal, ex, null);
                 Finish();
             }
             finally
@@ -220,6 +220,14 @@ public sealed class ParallelDirectoryScanner : IDiskScanner
 
             private bool TryGetWork(out WorkItem item)
             {
+                // Normally the scan only finishes once every stack is empty; after a fatal error in
+                // another worker it finishes early, and the remaining local work is abandoned.
+                if (_run._done)
+                {
+                    item = default;
+                    return false;
+                }
+
                 if (_local.Count > 0)
                 {
                     item = _local[^1];

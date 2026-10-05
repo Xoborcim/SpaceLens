@@ -294,7 +294,7 @@ public sealed partial class FindingsView : UserControl
                 emptied.AddRange(tree.GetFiles(child).Select(f => (true, f)));
             }
 
-            State.RemoveFromTree(emptied);
+            State.RemoveFromTree(tree, emptied);
         }
     }
 }

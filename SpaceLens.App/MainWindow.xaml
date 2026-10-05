@@ -42,7 +42,7 @@
                     PlaceholderText="Search results (Ctrl+F)"
                     QueryIcon="Find"
                     AutomationProperties.Name="Search scan results"
-                    ToolTipService.ToolTip="Examples: .iso   *.vmdk   steam   node_modules   &gt;5GB   type:video"
+                    ToolTipService.ToolTip="Examples: .iso   *.vmdk   steam   node_modules   &gt;5GB   type:video   older:1y   path:steam   -node_modules   .iso OR .vhdx"
                     TextChanged="OnSearchTextChanged"
                     QuerySubmitted="OnSearchSubmitted" />
             </NavigationView.AutoSuggestBox>
@@ -59,6 +59,12 @@
                 <NavigationViewItem Content="Large Files" Tag="largefiles" AccessKey="L">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE7C3;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Changes" Tag="changes" AccessKey="C">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE81C;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Duplicates" Tag="duplicates" AccessKey="U">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8C8;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="File Types" Tag="filetypes" AccessKey="T">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xEB05;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
@@ -70,6 +76,12 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Cleanup basket" Tag="basket" AccessKey="B">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE719;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="BasketBadge" Visibility="Collapsed" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="IssuesNavItem" Content="Inaccessible locations" Tag="errors" Visibility="Collapsed">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE72E;" /></NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
@@ -125,6 +137,19 @@
                         <TextBlock Text="Cancel" />
                     </StackPanel>
                 </Button>
+                <DropDownButton x:Name="ExportButton" Visibility="Collapsed" ToolTipService.ToolTip="Save the results to a file" AutomationProperties.Name="Export">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+                        <TextBlock Text="Export" />
+                    </StackPanel>
+                    <DropDownButton.Flyout>
+                        <MenuFlyout Placement="TopEdgeAlignedRight">
+                            <MenuFlyoutItem Text="Folders as CSV…" Tag="folders" Click="OnExportClick" />
+                            <MenuFlyoutItem Text="Large files as CSV…" Tag="files" Click="OnExportClick" />
+                            <MenuFlyoutItem Text="Full report as JSON…" Tag="json" Click="OnExportClick" />
+                        </MenuFlyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
                 <Button x:Name="RescanButton" Visibility="Collapsed" Click="OnRescanClick" ToolTipService.ToolTip="Rescan (Ctrl+R)" AutomationProperties.Name="Rescan">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE72C;" FontSize="14" />

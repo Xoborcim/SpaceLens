@@ -28,14 +28,40 @@ dotnet run --project SpaceLens.App -c Release
 dotnet publish SpaceLens.App -c Release -o publish\SpaceLens
 ```
 
-`SpaceLens.exe <folder>` starts a scan of that folder right away.
+`SpaceLens.exe <folder>` starts a scan of that folder right away. Settings can
+add "Analyze with SpaceLens" to File Explorer's right-click menu for folders
+and drives.
+
+For files in OneDrive (or another provider using the Windows Cloud Files API),
+the context menu offers "Free up space (online-only)": like the File Explorer
+command of the same name, the files stay in the cloud and only the local copy
+is removed by the provider. Nothing is deleted.
+
+"Add to cleanup basket" in the context menu collects files and folders from any
+page; the Cleanup basket page shows them together with their total and removes
+them through the normal Recycle Bin confirmation.
+
+Right-click a folder and choose "Rescan this folder" to update just that folder
+in the results instead of rescanning the whole drive.
+
+The map on the Overview can be coloured by location, by file type (the type
+holding the most space in each folder) or by age (the newest change inside).
+
+Export (next to Rescan) saves the folders or the large files as CSV, or a full
+report as JSON. Sizes are in bytes and times are UTC (ISO 8601).
 
 Keyboard: Ctrl+R / F5 rescan, Ctrl+F search, Ctrl+L scan a folder, Enter opens,
 Delete shows the Recycle Bin confirmation (it never deletes without one), and
 Shift+F10 or the context-menu key shows the actions for the selected item.
 
 Search accepts plain text (`steam`), wildcards (`*.vmdk`), extensions (`.iso`),
-folder names (`node_modules`) and size filters (`>5GB`).
+folder names (`node_modules`, `.git`), size filters (`>5GB`) and modification
+dates for files (`older:1y`, `newer:30d`, `older:2024-01-01`; units d, w, m, y).
+`path:steamapps` (or `path:"Program Files"`) matches the full path, `-term`
+excludes anything matching a term (`-node_modules`, `-type:video`), and `OR`
+separates alternatives (`.iso >4GB OR .vhdx`). Searches can be saved from the
+Saved searches menu on the results page.
+Large Files can also be limited to files not modified in 6 months to 5 years.
 
 ## Architecture
 
@@ -55,6 +81,17 @@ folder names (`node_modules`) and size filters (`>5GB`).
   `%LOCALAPPDATA%\SpaceLens\Snapshots`, so the next start shows
   "Last scanned … [Rescan]" without rescanning. The snapshot also records the
   volume's USN journal position, ready for a future incremental scan.
+- The snapshot a new scan replaces is kept as the previous scan. The Changes
+  page compares the two (`ScanComparer`): folders are matched by name level by
+  level, and the difference is explained by a short list of the folders that
+  grew, shrank, appeared or disappeared, drilling down to the folder that
+  actually changed. The previous scan is only loaded while comparing.
+- Duplicates (`DuplicateFinder`) runs only when asked, because it reads file
+  contents. Indexed files are grouped by size, hard links are collapsed (same
+  volume and file ID), then the first and last 64 KB are hashed, and only
+  files that still match are hashed completely (SHA-256). Online-only cloud
+  files are never read, since that would download them, and C:\Windows is
+  skipped. Copies are removed through the normal Recycle Bin confirmation.
 
 ## Safety rules
 
@@ -62,9 +99,13 @@ folder names (`node_modules`) and size filters (`>5GB`).
   WinSxS, boot files, and EFI/recovery partitions are protected and can
   never be removed from SpaceLens. Other Windows-managed locations show
   "Managed by Windows" and point to the Windows tool that manages them.
+- Other users' profiles, the Public folder and the Default profile are
+  protected like your own profile; their contents can be reviewed individually.
 - Every removal asks for confirmation, and Cancel is the default button.
   Removal goes to the Recycle Bin. Permanent deletion is a separate action,
-  for files only, and requires ticking an acknowledgement box.
+  for files only, and requires ticking an acknowledgement box. On drives
+  without a Recycle Bin (removable and network drives) the confirmation says
+  that the removal is permanent and requires the same acknowledgement.
 - Installed apps are removed only through their official uninstaller, which is
   interactive by default. A quiet uninstall is offered only when the app
   provides one, and it is never the default. Install folders are never
@@ -74,7 +115,11 @@ folder names (`node_modules`) and size filters (`>5GB`).
   point to that tool instead of offering direct deletion.
 - No label says "safe to delete". Developer storage is explained before any
   removal.
-- SpaceLens never changes the registry and never "cleans" Windows.
+- SpaceLens never "cleans" Windows and never changes the registry, with one
+  opt-in exception: the "Analyze with SpaceLens" entry in File Explorer's
+  right-click menu (Settings > File Explorer) adds keys under
+  `HKEY_CURRENT_USER\Software\Classes`, for the current user only. Turning
+  the setting off deletes them again.
 - Administrator rights are never required.
 
 ## Privacy

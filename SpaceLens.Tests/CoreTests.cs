@@ -90,6 +90,82 @@ public class ScanTreeTests
     }
 
     [Fact]
+    public void Removing_a_directory_also_removes_its_small_files_from_category_totals()
+    {
+        // D:\a holds 2 MB of small documents, D:\b 6 MB of small images and an indexed 4 MB video.
+        var tree = new ScanTree(@"D:\");
+        int a = tree.AddDirectory(ScanTree.RootIndex, "a");
+        int b = tree.AddDirectory(ScanTree.RootIndex, "b");
+        tree.AddFile(b, "clip.mp4", 4L << 20, FileCategory.Video, 0);
+        tree.CompleteDirectory(a, 2L << 20, 20, 0);
+        tree.CompleteDirectory(b, 10L << 20, 61, 0);
+        tree.CompleteDirectory(ScanTree.RootIndex, 0, 0, 2);
+        tree.AddCategoryTotals(Totals((FileCategory.Document, 2L << 20), (FileCategory.Image, 6L << 20), (FileCategory.Video, 4L << 20)),
+            Totals((FileCategory.Document, 20), (FileCategory.Image, 60), (FileCategory.Video, 1)));
+
+        tree.RemoveDirectory(b);
+
+        Assert.Equal(tree.Root.TotalSize, tree.CategoryBytes.Sum());
+        Assert.Equal(tree.Root.TotalFiles, tree.CategoryCounts.Sum());
+        Assert.Equal(0, tree.CategoryBytes[(int)FileCategory.Video]);
+        Assert.All(tree.CategoryBytes, v => Assert.True(v >= 0));
+    }
+
+    private static long[] Totals(params (FileCategory Category, long Value)[] values)
+    {
+        var totals = new long[FileCategoryInfo.Count];
+        foreach (var (category, value) in values)
+        {
+            totals[(int)category] = value;
+        }
+
+        return totals;
+    }
+
+    [Fact]
+    public void Replacing_a_directory_with_a_fresh_scan_fixes_ancestor_totals()
+    {
+        var tree = Sample();
+        long before = tree.Root.TotalSize;
+        int downloads = tree.FindDirectory(@"C:\Users\me\Downloads");
+
+        // Fresh scan of Downloads: the ISO is gone, a new folder with a 5 GB archive appeared.
+        var fresh = new ScanTree(@"C:\Users\me\Downloads");
+        int newFolder = fresh.AddDirectory(ScanTree.RootIndex, "Installers");
+        fresh.AddFile(newFolder, "big.zip", 5L << 30, FileCategory.Archive, 0);
+        fresh.CompleteDirectory(ScanTree.RootIndex, 4000, 3, 1);
+        fresh.CompleteDirectory(newFolder, 5L << 30, 1, 0);
+        fresh.AddCategoryTotals(Totals((FileCategory.Archive, 5L << 30), (FileCategory.Other, 4000)), Totals((FileCategory.Archive, 1), (FileCategory.Other, 3)));
+        fresh.RecordError(@"C:\Users\me\Downloads\locked", 5, "Access denied");
+
+        int replaced = tree.ReplaceDirectory(downloads, fresh);
+
+        Assert.False(tree.IsLiveDirectory(downloads));
+        Assert.Equal(replaced, tree.FindDirectory(@"C:\Users\me\Downloads"));
+        Assert.Equal((5L << 30) + 4000, tree.Dir(replaced).TotalSize);
+        Assert.Equal(4, tree.Dir(replaced).TotalFiles);
+        Assert.Equal(1, tree.Dir(replaced).TotalDirs);
+        Assert.Equal(before - ((8L << 30) + 5000) + (5L << 30) + 4000, tree.Root.TotalSize);
+        Assert.Equal(tree.Root.TotalSize, tree.Dir(tree.FindDirectory(@"C:\Users")).TotalSize + tree.Dir(tree.FindDirectory(@"C:\Games")).TotalSize);
+        Assert.Equal(1 + 1000 + 4, tree.Root.TotalFiles); // Videos, Games\Big, new Downloads
+        Assert.Equal(7, tree.Root.TotalDirs); // Users, me, Downloads, Installers, Videos, Games, Big
+        int zip = Assert.Single(tree.GetFiles(tree.FindDirectory(@"C:\Users\me\Downloads\Installers")));
+        Assert.Equal(@"C:\Users\me\Downloads\Installers\big.zip", tree.GetFilePath(zip));
+        Assert.Equal(5L << 30, tree.CategoryBytes[(int)FileCategory.Archive]);
+        Assert.Equal(1, tree.ErrorCount);
+
+        // The result survives a snapshot round trip with the same totals.
+        using var stream = new MemoryStream();
+        SnapshotSerializer.Save(tree, stream);
+        stream.Position = 0;
+        var loaded = SnapshotSerializer.Load(stream);
+        Assert.Equal(tree.Root.TotalSize, loaded.Root.TotalSize);
+        Assert.Equal(tree.Root.TotalFiles, loaded.Root.TotalFiles);
+        Assert.Equal(tree.Root.TotalDirs, loaded.Root.TotalDirs);
+        Assert.Throws<InvalidOperationException>(() => tree.ReplaceDirectory(ScanTree.RootIndex, fresh));
+    }
+
+    [Fact]
     public void Removing_a_directory_detaches_its_subtree()
     {
         var tree = Sample();
@@ -127,7 +203,54 @@ public class ScanTreeTests
         Assert.True(loaded.FindDirectory(@"C:\Users\me\Downloads") > 0);
         Assert.Equal(1, loaded.ErrorCount);
         Assert.Equal(@"C:\System Volume Information", loaded.Errors.Single().Path);
-        Assert.Equal(8L << 30, loaded.TopFiles.Snapshot()[0].Key);
+        Assert.Equal(8L << 30, loaded.File(Breakdown.LargeFiles(loaded, 0)[0]).Size);
+    }
+}
+
+public class SnapshotConcurrencyTests
+{
+    [Fact]
+    public void Saving_while_items_are_removed_always_produces_a_loadable_snapshot()
+    {
+        for (int round = 0; round < 20; round++)
+        {
+            var tree = new ScanTree(@"D:\");
+            var files = new List<int>();
+            var dirs = new List<int>();
+            for (int d = 0; d < 200; d++)
+            {
+                int dir = tree.AddDirectory(ScanTree.RootIndex, $"dir{d}");
+                dirs.Add(dir);
+                for (int f = 0; f < 50; f++)
+                {
+                    files.Add(tree.AddFile(dir, $"file{f}.bin", 2L << 20, FileCategory.Other, 0));
+                }
+
+                tree.CompleteDirectory(dir, 50 * (2L << 20), 50, 0);
+            }
+
+            tree.CompleteDirectory(ScanTree.RootIndex, 0, 0, dirs.Count);
+
+            using var stream = new MemoryStream();
+            var remover = Task.Run(() =>
+            {
+                for (int i = 0; i < files.Count; i += 7)
+                {
+                    tree.RemoveFile(files[i]);
+                }
+
+                for (int i = 0; i < dirs.Count; i += 5)
+                {
+                    tree.RemoveDirectory(dirs[i]);
+                }
+            });
+            SnapshotSerializer.Save(tree, stream);
+            remover.Wait();
+
+            stream.Position = 0;
+            var loaded = SnapshotSerializer.Load(stream);
+            Assert.True(loaded.Root.TotalFiles > 0);
+        }
     }
 }
 
@@ -265,6 +388,10 @@ public class SizeFormatterTests
     [Theory]
     [InlineData("5GB", 5L << 30)]
     [InlineData("1.5 gb", 3L << 29)]
+    [InlineData("1,5 GB", 3L << 29)]
+    [InlineData("1,000MB", 1000L << 20)]
+    [InlineData("1,000.5 KB", 1_024_512)]
+    [InlineData("2PB", 2L << 50)]
     [InlineData("500MB", 500L << 20)]
     [InlineData("100k", 100L << 10)]
     [InlineData("42", 42L)]
@@ -279,6 +406,9 @@ public class SizeFormatterTests
     [InlineData("")]
     [InlineData("GB")]
     [InlineData("5 parsecs")]
+    [InlineData("1,5.5GB")]
+    [InlineData("1,000,5GB")]
+    [InlineData("99999999PB")]
     public void Rejects_invalid_sizes(string text) => Assert.False(SizeFormatter.TryParse(text, out _));
 }
 
@@ -311,12 +441,156 @@ public class SearchTests
     }
 
     [Fact]
+    public void Dot_names_find_folders_with_that_exact_name()
+    {
+        var tree = ScanTreeTests.Sample();
+        int me = tree.FindDirectory(@"C:\Users\me");
+        int git = tree.AddDirectory(me, ".git");
+        tree.AddDirectory(me, "my.git.backup");
+        tree.CompleteDirectory(git, 10L << 20, 3, 0);
+
+        var hit = Assert.Single(SearchEngine.Search(tree, SearchQuery.Parse(".git")).Hits);
+        Assert.False(hit.IsFile);
+        Assert.Equal(git, hit.Index);
+        Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse(".git type:video")).Hits);
+    }
+
+    private static readonly DateTime Now = new(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>D:\old.iso (3 years old), D:\recent.mkv (10 days old), D:\unknown.bin (no date), D:\Archive folder.</summary>
+    private static ScanTree DatedTree()
+    {
+        var tree = new ScanTree(@"D:\");
+        int archive = tree.AddDirectory(ScanTree.RootIndex, "Archive", lastWriteUtc: Now.AddYears(-5).ToFileTimeUtc());
+        tree.AddFile(ScanTree.RootIndex, "old.iso", 4L << 30, FileCategory.DiskImage, Now.AddYears(-3).ToFileTimeUtc());
+        tree.AddFile(ScanTree.RootIndex, "recent.mkv", 2L << 30, FileCategory.Video, Now.AddDays(-10).ToFileTimeUtc());
+        tree.AddFile(ScanTree.RootIndex, "unknown.bin", 1L << 30, FileCategory.Other, 0);
+        tree.CompleteDirectory(archive, 5L << 30, 10, 0);
+        tree.CompleteDirectory(ScanTree.RootIndex, 7L << 30, 3, 1);
+        return tree;
+    }
+
+    private static List<string> Names(ScanTree tree, string query) =>
+        SearchEngine.Search(tree, SearchQuery.Parse(query, Now)).Hits
+            .Select(h => h.IsFile ? tree.File(h.Index).Name : tree.Dir(h.Index).Name).ToList();
+
+    [Fact]
+    public void Older_and_newer_filter_files_by_modification_date()
+    {
+        var tree = DatedTree();
+        Assert.Equal(["old.iso"], Names(tree, "older:1y"));
+        Assert.Equal(["old.iso"], Names(tree, "older:2024-01-01"));
+        Assert.Equal(["recent.mkv"], Names(tree, "newer:30d"));
+        Assert.Equal(["recent.mkv"], Names(tree, "newer:2w"));
+        Assert.Equal(["old.iso", "recent.mkv"], Names(tree, "older:1w"));
+        Assert.Empty(Names(tree, "older:1y newer:2y"));
+        Assert.Equal(["old.iso"], Names(tree, "older:1y newer:4y"));
+        Assert.Equal(["old.iso"], Names(tree, "older:6m >3GB"));
+        Assert.Empty(Names(tree, "older:soon"));
+    }
+
+    [Theory]
+    [InlineData("30d", 30.0)]
+    [InlineData("45", 45.0)]
+    [InlineData("1000", 1000.0)]
+    [InlineData("2w", 14.0)]
+    public void Ages_are_parsed_in_days_and_weeks(string text, double days)
+    {
+        Assert.True(SearchQuery.TryParseCutoff(text, Now, out var cutoff));
+        Assert.Equal(Now.AddDays(-days), cutoff);
+    }
+
+    [Fact]
+    public void Ages_in_months_and_years_and_dates_are_parsed()
+    {
+        Assert.True(SearchQuery.TryParseCutoff("6m", Now, out var months));
+        Assert.Equal(Now.AddMonths(-6), months);
+        Assert.True(SearchQuery.TryParseCutoff("2Y", Now, out var years));
+        Assert.Equal(Now.AddYears(-2), years);
+        Assert.True(SearchQuery.TryParseCutoff("2024", Now, out var year));
+        Assert.Equal(2024, year.ToLocalTime().Year);
+        Assert.False(SearchQuery.TryParseCutoff("", Now, out _));
+        Assert.False(SearchQuery.TryParseCutoff("3x", Now, out _));
+        Assert.False(SearchQuery.TryParseCutoff("-5d", Now, out _));
+    }
+
+    [Fact]
+    public void Large_files_can_be_limited_to_files_not_modified_recently()
+    {
+        var tree = DatedTree();
+        var old = Breakdown.LargeFiles(tree, 0, modifiedBefore: Now.AddYears(-1).ToFileTimeUtc());
+        Assert.Equal(["old.iso"], old.Select(i => tree.File(i).Name));
+        Assert.Equal(3, Breakdown.LargeFiles(tree, 0).Count);
+    }
+
+    [Fact]
+    public void Or_separates_alternatives_and_binds_weaker_than_spaces()
+    {
+        var tree = ScanTreeTests.Sample();
+        Assert.Equal(["ubuntu.iso", "movie.mkv"], SearchNames(tree, ".iso OR .mkv"));
+        Assert.Equal(["ubuntu.iso", "movie.mkv"], SearchNames(tree, ".iso | .mkv"));
+        Assert.Equal(["movie.mkv"], SearchNames(tree, ".iso >10GB OR .mkv"));
+        Assert.Equal(["ubuntu.iso"], SearchNames(tree, "OR .iso OR"));
+        Assert.Empty(SearchNames(tree, "\"OR\""));
+    }
+
+    [Fact]
+    public void Minus_excludes_any_kind_of_term()
+    {
+        var tree = ScanTreeTests.Sample();
+        Assert.Equal(["movie.mkv"], SearchNames(tree, ">1GB -.iso -Big -Games -Users -me -Downloads -Videos"));
+        Assert.Equal(["ubuntu.iso"], SearchNames(tree, ">1GB -type:video -path:Games -Users -me -Downloads -Videos"));
+        Assert.DoesNotContain("Videos", SearchNames(tree, "-path:Videos"));
+        Assert.Contains("Downloads", SearchNames(tree, "-path:Videos"));
+
+        // Only exclusions: everything else matches.
+        Assert.Equal(SearchNames(tree, ">0").Count - 1, SearchNames(tree, "-Big").Count);
+    }
+
+    [Fact]
+    public void Path_matches_the_full_path_and_quotes_group_spaces()
+    {
+        var tree = ScanTreeTests.Sample();
+        int me = tree.FindDirectory(@"C:\Users\me");
+        int saved = tree.AddDirectory(me, "Saved Games");
+        tree.AddFile(saved, "save.dat", 2L << 20, FileCategory.Other, 0);
+        tree.CompleteDirectory(saved, 2L << 20, 1, 0);
+
+        Assert.Equal(["ubuntu.iso"], SearchNames(tree, "path:Downloads .iso"));
+        Assert.Equal(["ubuntu.iso", "movie.mkv", "save.dat"], SearchNames(tree, @"path:Users\me type:other OR path:users/me .iso OR path:users\me .mkv"));
+        Assert.Equal(["Saved Games", "save.dat"], SearchNames(tree, "path:\"Saved Games\""));
+        Assert.Equal(["save.dat"], SearchNames(tree, "save \"path:x\" OR -\"Saved\" save"));
+    }
+
+    [Fact]
+    public void Invalid_filters_match_nothing_even_names_containing_the_literal_text()
+    {
+        var tree = ScanTreeTests.Sample();
+        int me = tree.FindDirectory(@"C:\Users\me");
+        int odd = tree.AddDirectory(me, "notes type:nonsense older:soon");
+        tree.CompleteDirectory(odd, 2L << 20, 1, 0);
+
+        Assert.Empty(SearchNames(tree, "type:nonsense"));
+        Assert.Empty(SearchNames(tree, "older:soon"));
+        Assert.Empty(SearchNames(tree, "type:video type:nonsense"));
+        Assert.Contains("notes type:nonsense older:soon", SearchNames(tree, "\"type:nonsense\""));
+        Assert.Contains("movie.mkv", SearchNames(tree, ".mkv -older:soon"));
+        Assert.Equal(["movie.mkv"], SearchNames(tree, "type:nonsense OR .mkv"));
+    }
+
+    private static List<string> SearchNames(ScanTree tree, string query) =>
+        SearchEngine.Search(tree, SearchQuery.Parse(query)).Hits
+            .Select(h => h.IsFile ? tree.File(h.Index).Name : tree.Dir(h.Index).Name).ToList();
+
+    [Fact]
     public void Type_filter_and_quoted_terms()
     {
         var tree = ScanTreeTests.Sample();
         Assert.Equal("movie.mkv", tree.File(SearchEngine.Search(tree, SearchQuery.Parse("type:video")).Hits.Single().Index).Name);
         Assert.True(SearchQuery.Parse("").IsEmpty);
         Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse("\"not here\"")).Hits);
+        Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse("type:video type:nonsense")).Hits);
+        Assert.Single(SearchEngine.Search(tree, SearchQuery.Parse("type:video type:diskimage")).Hits, h => h.IsFile && tree.File(h.Index).Name == "movie.mkv");
     }
 }
 
@@ -396,4 +670,60 @@ public class LocationClassifierTests
         Assert.False(totals.ContainsKey(LocationCategory.Other));
         Assert.Equal(tree.Root.TotalSize, totals.Values.Sum());
     }
+}
+
+public class CommandLineTests
+{
+    [Theory]
+    [InlineData(@"D:\Projects", @"D:\Projects")]
+    [InlineData("\"D:\\Projects\"", @"D:\Projects")]
+    [InlineData("C:\"", @"C:\")]
+    [InlineData("C:", @"C:\")]
+    [InlineData(@"C:\", @"C:\")]
+    [InlineData("  ", null)]
+    [InlineData("\"\"", null)]
+    public void Explorer_arguments_are_cleaned(string argument, string? expected) =>
+        Assert.Equal(expected, PathUtil.CleanCommandLinePath(argument));
+
+    [Fact]
+    public void Explorer_command_quotes_the_program_and_the_location() =>
+        Assert.Equal("\"C:\\Tools\\SpaceLens\\SpaceLens.exe\" \"%1\"",
+            SpaceLens.Windows.Shell.ExplorerIntegration.CommandFor(@"C:\Tools\SpaceLens\SpaceLens.exe", "%1"));
+}
+
+public class TreemapColoringTests
+{
+    private static readonly DateTime Now = new(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void Folders_take_the_colour_of_their_largest_file_type_and_newest_change()
+    {
+        var tree = new ScanTree(@"D:\");
+        int media = tree.AddDirectory(ScanTree.RootIndex, "Media", lastWriteUtc: Now.AddYears(-4).ToFileTimeUtc());
+        int deep = tree.AddDirectory(media, "Deep", lastWriteUtc: Now.AddYears(-4).ToFileTimeUtc());
+        tree.AddFile(media, "a.mkv", 3L << 30, FileCategory.Video, Now.AddYears(-4).ToFileTimeUtc());
+        tree.AddFile(deep, "b.iso", 2L << 30, FileCategory.DiskImage, Now.AddDays(-3).ToFileTimeUtc());
+        tree.AddFile(deep, "c.mp4", 1L << 30, FileCategory.Video, Now.AddYears(-4).ToFileTimeUtc());
+        int empty = tree.AddDirectory(ScanTree.RootIndex, "Empty");
+
+        Assert.Equal(FileCategory.Video, TreemapColoring.DominantCategory(tree, media)); // 4 GB video vs 2 GB image
+        Assert.Equal(FileCategory.DiskImage, TreemapColoring.DominantCategory(tree, deep)); // 2 GB image vs 1 GB video
+        Assert.Null(TreemapColoring.DominantCategory(tree, empty));
+
+        Assert.Equal(Now.AddDays(-3).ToFileTimeUtc(), TreemapColoring.NewestWriteUtc(tree, media));
+        Assert.Equal(TreemapColoring.AgeBands[0].Color, TreemapColoring.AgeColor(TreemapColoring.NewestWriteUtc(tree, media), Now));
+        Assert.Equal(0, TreemapColoring.NewestWriteUtc(tree, empty));
+    }
+
+    [Theory]
+    [InlineData(5, 0)]
+    [InlineData(60, 1)]
+    [InlineData(300, 2)]
+    [InlineData(700, 3)]
+    [InlineData(5000, 4)]
+    public void Ages_fall_into_bands(int daysOld, int band) =>
+        Assert.Equal(TreemapColoring.AgeBands[band].Color, TreemapColoring.AgeColor(Now.AddDays(-daysOld).ToFileTimeUtc(), Now));
+
+    [Fact]
+    public void Unknown_dates_are_grey() => Assert.Equal(TreemapColoring.UnknownColor, TreemapColoring.AgeColor(0, Now));
 }

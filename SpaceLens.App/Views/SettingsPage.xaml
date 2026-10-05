@@ -43,6 +43,17 @@
 
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="12">
+                    <TextBlock Text="File Explorer" Style="{StaticResource SectionTitleStyle}" />
+                    <ToggleSwitch x:Name="ExplorerToggle" Header="Show &quot;Analyze with SpaceLens&quot; when right-clicking folders and drives" Toggled="OnExplorerToggled" />
+                    <TextBlock
+                        Style="{StaticResource SecondaryTextStyle}"
+                        TextWrapping="Wrap"
+                        Text="Adds one menu entry for your user account only (under HKEY_CURRENT_USER\Software\Classes). Turning this off removes it again; turn it off before deleting SpaceLens. On Windows 11 the entry is under &quot;Show more options&quot;." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="12">
                     <TextBlock Text="Privacy and saved data" Style="{StaticResource SectionTitleStyle}" />
                     <TextBlock TextWrapping="Wrap" Text="SpaceLens runs entirely on this PC. It has no account, sends no telemetry or analytics, and never uploads file names, paths, installed programs or any other information. It does not connect to the internet." />
                     <ToggleSwitch x:Name="RememberToggle" Header="Remember the last scan so results appear instantly at startup" Toggled="OnSettingToggled" />

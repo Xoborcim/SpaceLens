@@ -17,7 +17,8 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         string[] commandLine = Environment.GetCommandLineArgs();
-        string? startupFolder = commandLine.Length > 1 && Directory.Exists(commandLine[1]) ? commandLine[1] : null;
+        string? argument = commandLine.Length > 1 ? Core.Models.PathUtil.CleanCommandLinePath(commandLine[1]) : null;
+        string? startupFolder = argument is not null && Directory.Exists(argument) ? argument : null;
         Window = new MainWindow(startupFolder);
         Window.Activate();
     }

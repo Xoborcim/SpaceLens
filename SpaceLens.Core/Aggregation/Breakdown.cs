@@ -152,7 +152,8 @@ public static class Breakdown
     }
 
     /// <summary>All indexed files at least <paramref name="minimumSize"/> bytes, sorted descending.</summary>
-    public static List<int> LargeFiles(ScanTree tree, long minimumSize, FileCategory? category = null, int maxResults = 5000)
+    /// <param name="modifiedBefore">Only files last modified before this FILETIME (UTC); files with an unknown date are excluded.</param>
+    public static List<int> LargeFiles(ScanTree tree, long minimumSize, FileCategory? category = null, int maxResults = 5000, long modifiedBefore = long.MaxValue)
     {
         var top = new TopN<int>(maxResults);
         int count = tree.FileRecordCount;
@@ -164,7 +165,8 @@ public static class Breakdown
             }
 
             ref var file = ref tree.File(i);
-            if (file.Size >= minimumSize && (category is null || file.Category == category))
+            if (file.Size >= minimumSize && (category is null || file.Category == category) &&
+                (modifiedBefore == long.MaxValue || file.LastWriteUtc > 0 && file.LastWriteUtc < modifiedBefore))
             {
                 top.Offer(file.Size, i);
             }

@@ -6,6 +6,7 @@ using SpaceLens.App.ViewModels;
 using SpaceLens.Core.Aggregation;
 using SpaceLens.Core.Formatting;
 using SpaceLens.Core.Models;
+using SpaceLens.Core.Search;
 
 namespace SpaceLens.App.Views;
 
@@ -76,6 +77,21 @@ public sealed partial class LargeFilesPage : Page
         }
     }
 
+    /// <summary>Files must be older than this (FILETIME, UTC); long.MaxValue for "Any time".</summary>
+    private long ModifiedBefore =>
+        (AgeFilter.SelectedItem as ComboBoxItem)?.Tag is string age && SearchQuery.TryParseCutoff(age, DateTime.UtcNow, out var cutoff)
+            ? cutoff.ToFileTimeUtc()
+            : long.MaxValue;
+
+    private string? AgePhrase => (AgeFilter.SelectedItem as ComboBoxItem)?.Tag switch
+    {
+        "6m" => "6 months",
+        "1y" => "a year",
+        "2y" => "2 years",
+        "5y" => "5 years",
+        _ => null,
+    };
+
     private void OnFilterChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_initialized)
@@ -111,7 +127,8 @@ public sealed partial class LargeFilesPage : Page
         int version = ++_version;
         long minimum = Math.Max(MinimumSize, tree.FileIndexThreshold);
         FileCategory? category = (TypeFilter.SelectedItem as ComboBoxItem)?.Tag is FileCategory c ? c : null;
-        var indices = await Task.Run(() => Breakdown.LargeFiles(tree, minimum, category, MaxResults));
+        long modifiedBefore = ModifiedBefore;
+        var indices = await Task.Run(() => Breakdown.LargeFiles(tree, minimum, category, MaxResults, modifiedBefore));
         if (version != _version || tree != State.Tree)
         {
             return;
@@ -121,7 +138,7 @@ public sealed partial class LargeFilesPage : Page
         long max = items.Count > 0 ? items[0].Size : 0;
         foreach (var item in items)
         {
-            item.Subtitle = item.ParentPath;
+            item.Subtitle = item.ModifiedText.Length > 0 ? $"{item.ParentPath}  ·  modified {item.ModifiedText}" : item.ParentPath;
             item.BarWidth = SummaryItem.Bar(item.Size, max);
         }
 
@@ -130,7 +147,8 @@ public sealed partial class LargeFilesPage : Page
         SummaryText.Text = items.Count == 0 ? "" :
             $"{SizeFormatter.FormatCount(items.Count)}{(items.Count == MaxResults ? "+" : "")} files  ·  {SizeFormatter.Format(total)} in total" +
             (State.IsScanning ? "  ·  scan in progress" : "");
-        EmptyText.Text = $"No files over {SizeFormatter.Format(minimum)}" + (category is { } cat ? $" of type {FileCategoryInfo.DisplayName(cat)}" : "") + ".";
+        EmptyText.Text = $"No files over {SizeFormatter.Format(minimum)}" + (category is { } cat ? $" of type {FileCategoryInfo.DisplayName(cat)}" : "") +
+            (AgePhrase is { } age ? $" that haven't been modified in {age}" : "") + ".";
         EmptyText.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Details.Show(null);
     }

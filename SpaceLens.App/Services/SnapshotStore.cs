@@ -8,6 +8,10 @@ public static class SnapshotStore
 {
     private static string Folder => Path.Combine(SettingsService.DataDirectory, "Snapshots");
 
+    // Saves run on background threads (after a scan and after every removal). One at a time: each save
+    // reads the tree when it starts, so whichever runs last writes the newest state.
+    private static readonly Lock SaveGate = new();
+
     public static string PathFor(string root)
     {
         string normalized = PathUtil.NormalizeDisplayPath(root).ToUpperInvariant();
@@ -19,6 +23,9 @@ public static class SnapshotStore
 
         return Path.Combine(Folder, safe + ".slsnap");
     }
+
+    /// <summary>The scan before the current one, kept so the Changes page can compare the two.</summary>
+    public static string PreviousPathFor(string root) => Path.ChangeExtension(PathFor(root), ".prev.slsnap");
 
     private static uint StableHash(string text)
     {
@@ -46,7 +53,71 @@ public static class SnapshotStore
         }
     }
 
+    public static ScanTree? TryLoadPrevious(string root)
+    {
+        try
+        {
+            string path = PreviousPathFor(root);
+            return File.Exists(path) ? SnapshotSerializer.LoadFromFile(path) : null;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or EndOfStreamException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Saves a newly completed scan. The snapshot it replaces becomes the previous scan. Saves after
+    /// removals use <see cref="Save"/> instead, which keeps the previous scan as it is.
+    /// </summary>
+    public static void SaveScan(ScanTree tree)
+    {
+        lock (SaveGate)
+        {
+            // Write the new snapshot completely first: if that fails (full disk...), the current one stays.
+            string current = PathFor(tree.RootPath);
+            string written = current + ".new";
+            try
+            {
+                SnapshotSerializer.SaveToFile(tree, written);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(current))
+                {
+                    File.Move(current, PreviousPathFor(tree.RootPath), overwrite: true);
+                }
+
+                File.Move(written, current, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Rotation failed: still make the new scan the current one if possible.
+                try
+                {
+                    File.Move(written, current, overwrite: true);
+                }
+                catch (Exception inner) when (inner is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+    }
+
     public static void Save(ScanTree tree)
+    {
+        lock (SaveGate)
+        {
+            SaveCore(tree);
+        }
+    }
+
+    private static void SaveCore(ScanTree tree)
     {
         try
         {
@@ -58,6 +129,14 @@ public static class SnapshotStore
     }
 
     public static void DeleteAll()
+    {
+        lock (SaveGate)
+        {
+            DeleteAllCore();
+        }
+    }
+
+    private static void DeleteAllCore()
     {
         try
         {
