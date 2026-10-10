@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Cross-platform desktop app (Avalonia), built first for macOS. It uses the shared engine (SpaceLens.Core)
+    and the macOS platform layer (SpaceLens.Mac). The Windows app (SpaceLens.App, WinUI) is unchanged.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SpaceLens.Desktop</RootNamespace>
+    <AssemblyName>SpaceLens</AssemblyName>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/SpaceLens.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SpaceLens.Core\SpaceLens.Core.csproj" />
+    <ProjectReference Include="..\SpaceLens.Mac\SpaceLens.Mac.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
+    <InternalsVisibleTo Include="SpaceLens.Avalonia.Tests" />
+  </ItemGroup>
+</Project>

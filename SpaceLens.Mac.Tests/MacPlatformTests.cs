@@ -1,6 +1,7 @@
 using SpaceLens.Core.Classification;
 using SpaceLens.Core.Models;
 using SpaceLens.Core.Safety;
+using SpaceLens.Core.Scanning;
 
 namespace SpaceLens.Mac.Tests;
 
@@ -254,5 +255,62 @@ public class MacDetectionTests
 
         var system = new MacApp { Name = "Safari", BundlePath = "/Applications/Safari.app", IsSystem = true };
         Assert.Contains("part of macOS", shell.RemoveApplication(system).Error);
+    }
+}
+
+public class UnixScanningTests
+{
+    [Fact]
+    public void Stat_layout_is_verified_on_this_platform()
+    {
+        // Linux and macOS have known layouts; the runtime check must accept the one in use here.
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            Assert.True(UnixStat.IsAvailable);
+        }
+    }
+
+    [Fact]
+    public async Task Sparse_files_count_with_the_space_they_really_use()
+    {
+        if (!UnixStat.IsAvailable)
+        {
+            return;
+        }
+
+        string root = Path.Combine(Path.GetTempPath(), "SpaceLensMac", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "vm"));
+        try
+        {
+            // 2 GB long, a few KB written: a sparse file like Docker.raw.
+            string sparse = Path.Combine(root, "vm", "disk.raw");
+            using (var stream = new FileStream(sparse, FileMode.Create))
+            {
+                stream.SetLength(2L << 30);
+                stream.Position = 1L << 30;
+                stream.Write(new byte[4096]);
+            }
+
+            File.WriteAllBytes(Path.Combine(root, "vm", "small.txt"), new byte[3000]);
+            Directory.CreateSymbolicLink(Path.Combine(root, "link-to-vm"), Path.Combine(root, "vm"));
+
+            var tree = new ScanTree(root);
+            var result = await new ParallelDirectoryScanner(new UnixDirectoryEnumeratorFactory())
+                .ScanAsync(tree, new ScanOptions { MaxParallelism = 2 }, null, CancellationToken.None);
+
+            Assert.True(result.Completed);
+            // Counted with the few KB it occupies, so it is not even a "large file" (index threshold 1 MB).
+            int vm = tree.FindDirectory(Path.Combine(root, "vm"));
+            Assert.Empty(tree.GetFiles(vm));
+            Assert.Equal(2, tree.Dir(vm).TotalFiles);
+            Assert.True(tree.Root.TotalSize < 16L << 20, $"counted as {tree.Root.TotalSize} bytes");
+            int link = tree.FindDirectory(Path.Combine(root, "link-to-vm"));
+            Assert.True((tree.Dir(link).Flags & NodeFlags.ReparsePoint) != 0);
+            Assert.Equal(0, tree.Dir(link).TotalSize);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

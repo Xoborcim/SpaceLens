@@ -727,3 +727,46 @@ public class TreemapColoringTests
     [Fact]
     public void Unknown_dates_are_grey() => Assert.Equal(TreemapColoring.UnknownColor, TreemapColoring.AgeColor(0, Now));
 }
+
+public class DecimalUnitTests
+{
+    [Fact]
+    public void Decimal_units_match_finder()
+    {
+        var culture = Thread.CurrentThread.CurrentCulture;
+        Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        try
+        {
+            Assert.Equal("1.00 GB", SizeFormatter.Format(1_000_000_000, SizeUnits.Decimal));
+            Assert.Equal("954 MB", SizeFormatter.Format(1_000_000_000));
+            Assert.Equal("999 bytes", SizeFormatter.Format(999, SizeUnits.Decimal));
+            Assert.Equal("1.00 KB", SizeFormatter.Format(1000, SizeUnits.Decimal));
+            Assert.Equal("500 GB", SizeFormatter.Format(500_000_000_000, SizeUnits.Decimal));
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = culture;
+        }
+
+        Assert.True(SizeFormatter.TryParse("5GB", out long decimalBytes, SizeUnits.Decimal));
+        Assert.Equal(5_000_000_000, decimalBytes);
+        Assert.True(SizeFormatter.TryParse("5GiB", out long binaryBytes, SizeUnits.Decimal));
+        Assert.Equal(5L << 30, binaryBytes);
+        Assert.True(SizeFormatter.TryParse("5GB", out long windowsBytes));
+        Assert.Equal(5L << 30, windowsBytes);
+    }
+
+    [Fact]
+    public void Search_sizes_follow_the_unit_setting()
+    {
+        var tree = new ScanTree("/");
+        int dir = tree.AddDirectory(ScanTree.RootIndex, "d");
+        tree.AddFile(dir, "a.bin", 4_900_000_000, FileCategory.Other, 0); // 4.9 GB in Finder, 4.56 GiB
+        tree.CompleteDirectory(dir, 4_900_000_000, 1, 0);
+
+        Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse(">5GB .bin", units: SizeUnits.Decimal)).Hits);
+        Assert.Single(SearchEngine.Search(tree, SearchQuery.Parse(">4.5GB .bin", units: SizeUnits.Decimal)).Hits);
+        Assert.Single(SearchEngine.Search(tree, SearchQuery.Parse(">4.5GB .bin")).Hits);
+        Assert.Empty(SearchEngine.Search(tree, SearchQuery.Parse(">4.6GB .bin")).Hits); // binary: 4.6 GiB > 4.56 GiB
+    }
+}

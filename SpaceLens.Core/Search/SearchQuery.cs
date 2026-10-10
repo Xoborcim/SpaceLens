@@ -36,7 +36,8 @@ public sealed class SearchQuery
     public bool FilesOnly => _alternatives.Count > 0 && _alternatives.All(a => a.Required.FilesOnly);
 
     /// <param name="nowUtc">The reference time for relative dates such as <c>older:1y</c> (tests pass a fixed one).</param>
-    public static SearchQuery Parse(string? text, DateTime? nowUtc = null)
+    /// <param name="units">How sizes such as "&gt;5GB" are counted (decimal on macOS, matching Finder).</param>
+    public static SearchQuery Parse(string? text, DateTime? nowUtc = null, SizeUnits units = SizeUnits.Binary)
     {
         var query = new SearchQuery();
         if (string.IsNullOrWhiteSpace(text))
@@ -58,12 +59,12 @@ public sealed class SearchQuery
             if (token.Negated)
             {
                 var excluded = new Filter();
-                excluded.AddTerm(token.Text, token.Quoted, now);
+                excluded.AddTerm(token.Text, token.Quoted, now, units);
                 current.Excluded.Add(excluded);
             }
             else
             {
-                current.Required.AddTerm(token.Text, token.Quoted, now);
+                current.Required.AddTerm(token.Text, token.Quoted, now, units);
             }
         }
 
@@ -193,7 +194,7 @@ public sealed class SearchQuery
 
         public bool FilesOnly => _categories.Count > 0 || HasDateFilter;
 
-        public void AddTerm(string term, bool quoted, DateTime nowUtc)
+        public void AddTerm(string term, bool quoted, DateTime nowUtc, SizeUnits units)
         {
             if (term.Length == 0)
             {
@@ -216,7 +217,7 @@ public sealed class SearchQuery
                     rest = rest[1..];
                 }
 
-                if (SizeFormatter.TryParse(rest, out long bytes))
+                if (SizeFormatter.TryParse(rest, out long bytes, units))
                 {
                     if (greater)
                     {
