@@ -1,0 +1,90 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SpaceLens.Desktop.ViewModels"
+             xmlns:c="using:SpaceLens.Desktop.Controls"
+             x:Class="SpaceLens.Desktop.Views.OverviewView"
+             x:DataType="vm:OverviewViewModel">
+    <ScrollViewer>
+        <StackPanel Spacing="16">
+            <StackPanel Spacing="6">
+                <TextBlock Text="{Binding Heading}" Classes="title" />
+                <TextBlock Text="{Binding UsageText}" Classes="secondary" />
+                <ProgressBar Value="{Binding UsedFraction}" Maximum="1" Height="8" IsVisible="{Binding UsedFraction}" />
+            </StackPanel>
+
+            <Border Classes="banner" IsVisible="{Binding Main.ShowFullDiskAccessHint}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Some folders could not be read" FontWeight="SemiBold" />
+                        <TextBlock TextWrapping="Wrap" Text="macOS protects Mail, Messages, Safari and other app data until you allow SpaceLens Full Disk Access. Without it, those folders are left out of the totals." />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Open Privacy Settings" Command="{Binding Main.OpenFullDiskAccessSettingsCommand}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                </Grid>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding !HasTree}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="See what takes up space" Classes="section" />
+                    <TextBlock TextWrapping="Wrap" Text="SpaceLens scans the disk on this Mac, explains what uses the space and shows what can be removed safely. Nothing leaves your Mac." />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="Scan Disk" Command="{Binding Main.ScanVolumeCommand}" Classes="accent" />
+                        <Button Content="Scan a Folder…" Command="{Binding Main.ScanFolderCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Grid ColumnDefinitions="*,16,*" IsVisible="{Binding HasTree}">
+                <Border Classes="card">
+                    <StackPanel>
+                        <TextBlock Text="Space by location" Classes="section" />
+                        <ItemsControl ItemsSource="{Binding Categories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CategoryRow">
+                                    <Grid ColumnDefinitions="18,*,170,90" Height="30">
+                                        <Border Width="12" Height="12" CornerRadius="3" Background="{Binding Swatch}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" />
+                                        <Border Grid.Column="2" Height="6" CornerRadius="3" HorizontalAlignment="Left" Width="{Binding BarWidth}" Background="{Binding Swatch}" />
+                                        <TextBlock Grid.Column="3" Text="{Binding SizeText}" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Classes="card">
+                    <StackPanel>
+                        <TextBlock Text="Where space can be recovered" Classes="section" />
+                        <TextBlock Text="Nothing to suggest yet." Classes="secondary" IsVisible="{Binding !Opportunities.Count}" />
+                        <ItemsControl ItemsSource="{Binding Opportunities}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OpportunityRow">
+                                    <Grid ColumnDefinitions="*,90" Margin="0,0,0,10" ToolTip.Tip="{Binding Advice}">
+                                        <StackPanel Spacing="1">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Explanation}" Classes="secondary" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding SizeText}" HorizontalAlignment="Right" FontWeight="SemiBold" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Classes="card" IsVisible="{Binding HasTree}">
+                <StackPanel>
+                    <TextBlock Text="Largest items" Classes="section" />
+                    <ListBox x:Name="LargestList" ItemsSource="{Binding Largest}" ItemTemplate="{StaticResource ItemRow}" Background="Transparent" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding HasTree}">
+                <StackPanel>
+                    <TextBlock Text="Map" Classes="section" />
+                    <c:TreemapControl x:Name="Map" Cells="{Binding Map}" Height="340" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

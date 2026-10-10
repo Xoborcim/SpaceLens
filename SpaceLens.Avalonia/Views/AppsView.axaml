@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SpaceLens.Desktop.ViewModels"
+             x:Class="SpaceLens.Desktop.Views.AppsView"
+             x:DataType="vm:AppsViewModel">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+            <TextBlock Text="Apps" Classes="title" />
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Content="Reload" Command="{Binding ReloadCommand}" />
+                <TextBlock Text="{Binding Summary}" Classes="secondary" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Classes="secondary" TextWrapping="Wrap"
+                       Text="Removing an app moves it to the Trash, which is how apps are removed on a Mac. Its settings and data stay in your Library until you choose to remove them too." />
+        </StackPanel>
+        <ListBox ItemsSource="{Binding Items}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:AppRow">
+                    <Grid ColumnDefinitions="*,100,Auto" Height="52">
+                        <Grid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Reveal in Finder" Command="{Binding RevealCommand}" />
+                                <MenuItem Header="Move to Trash…" Command="{Binding RemoveCommand}" IsEnabled="{Binding CanRemove}" />
+                            </ContextMenu>
+                        </Grid.ContextMenu>
+                        <StackPanel VerticalAlignment="Center" Spacing="1">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Details}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding LeftoverText}" Classes="secondary" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding SizeText}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <Button Grid.Column="2" Content="Move to Trash…" Command="{Binding RemoveCommand}" IsEnabled="{Binding CanRemove}" VerticalAlignment="Center" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

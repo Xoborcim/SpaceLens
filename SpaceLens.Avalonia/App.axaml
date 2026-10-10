@@ -1,8 +1,81 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SpaceLens.Desktop.ViewModels"
+             xmlns:views="using:SpaceLens.Desktop.Views"
              x:Class="SpaceLens.Desktop.App"
+             Name="SpaceLens"
              RequestedThemeVariant="Default">
+    <Application.DataTemplates>
+        <DataTemplate DataType="vm:OverviewViewModel"><views:OverviewView /></DataTemplate>
+        <DataTemplate DataType="vm:FoldersViewModel"><views:FoldersView /></DataTemplate>
+        <DataTemplate DataType="vm:LargeFilesViewModel"><views:LargeFilesView /></DataTemplate>
+        <DataTemplate DataType="vm:SearchViewModel"><views:SearchView /></DataTemplate>
+        <DataTemplate DataType="vm:AppsViewModel"><views:AppsView /></DataTemplate>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <!-- A file or folder row: icon, name and detail line, badge, proportional bar, size; actions in the context menu. -->
+        <DataTemplate x:Key="ItemRow" DataType="vm:ItemViewModel">
+            <Grid ColumnDefinitions="28,*,Auto,130,90" Height="44" Background="Transparent">
+                <Grid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Reveal in Finder" Command="{Binding RevealCommand}" />
+                        <MenuItem Header="Open" Command="{Binding OpenCommand}" />
+                        <MenuItem Header="Copy Path" Command="{Binding CopyPathCommand}" />
+                        <MenuItem Header="Show in Folders" Command="{Binding ShowInFoldersCommand}" />
+                        <MenuItem Header="Rescan This Folder" Command="{Binding RescanFolderCommand}" IsVisible="{Binding IsFolder}" />
+                        <Separator />
+                        <MenuItem Header="Move to Trash…" Command="{Binding MoveToTrashCommand}" IsEnabled="{Binding CanTrash}" />
+                    </ContextMenu>
+                </Grid.ContextMenu>
+                <TextBlock Text="{Binding Icon}" VerticalAlignment="Center" FontSize="16" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}" />
+                    <TextBlock Text="{Binding Subtitle}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Border Grid.Column="2" Classes="badge" IsVisible="{Binding HasBadge}" Margin="8,0">
+                    <TextBlock Text="{Binding Badge}" FontSize="11" />
+                </Border>
+                <Border Grid.Column="3" Height="6" CornerRadius="3" VerticalAlignment="Center" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                    <Border HorizontalAlignment="Left" Width="{Binding BarWidth}" CornerRadius="3" Background="{Binding BarBrush}" />
+                </Border>
+                <TextBlock Grid.Column="4" Text="{Binding SizeText}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" />
+            </Grid>
+        </DataTemplate>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
+        <Style Selector="TextBlock.secondary">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Opacity" Value="0.7" />
+        </Style>
+        <Style Selector="TextBlock.title">
+            <Setter Property="FontSize" Value="26" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style Selector="Border.badge">
+            <Setter Property="Background" Value="#33E0A33D" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.banner">
+            <Setter Property="Background" Value="#22E0A33D" />
+            <Setter Property="BorderBrush" Value="#88E0A33D" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,10" />
+        </Style>
     </Application.Styles>
 </Application>

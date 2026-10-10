@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:s="using:SpaceLens.Desktop.Services"
+        x:Class="SpaceLens.Desktop.Views.ConfirmDialog"
+        x:DataType="s:ConfirmRequest"
+        Width="520" SizeToContent="Height" MaxHeight="640"
+        CanResize="False" WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Title="{Binding Title}">
+    <DockPanel Margin="24,20">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,16,0,0">
+            <Button x:Name="CancelButton" Content="Cancel" IsCancel="True" IsDefault="True" Click="OnCancel" MinWidth="90" HorizontalContentAlignment="Center" />
+            <Button x:Name="PrimaryButton" Content="{Binding PrimaryText}" Click="OnPrimary" Classes="accent" MinWidth="120" HorizontalContentAlignment="Center" />
+        </StackPanel>
+        <ScrollViewer>
+            <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <SelectableTextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding Warnings}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="s:DialogWarning">
+                            <Border Classes="banner" Margin="0,0,0,8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding Footnote}" Classes="secondary" TextWrapping="Wrap" />
+                <CheckBox x:Name="Acknowledge" Content="{Binding AcknowledgementText}" IsCheckedChanged="OnAcknowledgeChanged" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
