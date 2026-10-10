@@ -18,26 +18,14 @@ public sealed class DeveloperFilesDetector : DetectorBase
 
     public override string DisplayName => "Developer files";
 
-    public static IReadOnlyDictionary<string, string> GroupExplanations { get; } = new Dictionary<string, string>
+    public static IReadOnlyDictionary<string, string> GroupExplanations { get; } = new Dictionary<string, string>(ProjectArtifacts.GroupExplanations)
     {
-        ["node_modules"] = "Packages installed by npm, yarn or pnpm for a JavaScript project. Recreated by running the project's install command (for example \"npm install\").",
-        ["Rust target folders"] = "Build output of Cargo (Rust). Recreated by \"cargo build\"; \"cargo clean\" removes it.",
-        [".NET build output"] = "bin and obj folders of .NET / Visual Studio projects. Recreated on the next build.",
-        ["Java build output"] = "Build output of Maven or Gradle projects. Recreated on the next build.",
-        ["JavaScript build output"] = "Framework build output and caches (.next, .nuxt, dist, build, ...). Recreated by the project's build command.",
-        ["Python environments"] = "Python virtual environments with installed packages. They can be recreated from the project's requirements, but packages must be downloaded again.",
-        ["Python bytecode caches"] = "Compiled Python bytecode (__pycache__). Recreated automatically.",
         ["Package caches"] = "Downloaded packages shared by all projects. Packages are downloaded again when needed. Prefer the tool's own clean command (\"npm cache clean --force\", \"dotnet nuget locals all --clear\", \"pnpm store prune\", \"cargo cache\").",
         ["Toolchains & SDKs"] = "Installed compiler and SDK versions. Remove old versions with the tool's manager (for example \"rustup toolchain uninstall\" or \"elan toolchain uninstall\").",
         ["Docker"] = "Docker Desktop's virtual disk with images, containers and volumes. Use \"docker system prune\" or Docker Desktop > Troubleshoot > Clean / Purge data. Do not delete the disk file directly.",
         ["WSL"] = "Virtual disk of a WSL Linux distribution. It contains the whole Linux file system, including your files. Remove a distribution with \"wsl --unregister <name>\" only if you no longer need it.",
         ["Android emulators"] = "Android Virtual Devices. Delete unused devices from Android Studio's Device Manager.",
         ["Tool caches"] = "Caches written by developer tools and ML libraries (for example Hugging Face models). Usually downloaded again on demand.",
-    };
-
-    private static readonly HashSet<string> JsBuildNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".next", ".nuxt", ".svelte-kit", ".turbo", ".parcel-cache", ".angular", ".expo", ".vite",
     };
 
     /// <summary>
@@ -53,11 +41,6 @@ public sealed class DeveloperFilesDetector : DetectorBase
     private static readonly HashSet<string> InstalledContentRootNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "Program Files", "Program Files (x86)", "ProgramData", "Windows",
-    };
-
-    private static readonly HashSet<string> MarkerNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "node_modules", "target", "bin", "obj", "dist", "build", "out", ".gradle", ".venv", "venv", "env", "__pycache__",
     };
 
     public override IEnumerable<StorageFinding> Detect(DetectionContext context, CancellationToken cancellationToken)
@@ -92,49 +75,33 @@ public sealed class DeveloperFilesDetector : DetectorBase
             new[] { context.Known.WindowsDirectory, context.Known.ProgramFiles, context.Known.ProgramFilesX86, context.Known.ProgramData, Path.Combine(context.Known.UserProfile, "AppData") }
                 .Any(p => !string.IsNullOrEmpty(p) && PathUtil.IsSameOrUnder(tree.RootPath, p));
 
-        TreeWalker.Walk(tree, ScanTree.RootIndex, d =>
+        bool Skip(int d)
         {
             if (rootIsInstalledContent || claimed.Contains(d) || excluded.Contains(d))
             {
-                return false;
+                return true;
             }
 
             // Tool folders in the profile root (.vscode, .cursor, .dotnet, ...) hold installed tools and extensions.
             if (tree.Dir(d).Parent == profileIndex && tree.Dir(d).Name.StartsWith('.'))
             {
-                return false;
-            }
-
-            string name = tree.Dir(d).Name;
-            if (name.Equals("$Recycle.Bin", StringComparison.OrdinalIgnoreCase) || InstalledContentNames.Contains(name) ||
-                rootIsDrive && tree.Dir(d).Parent == ScanTree.RootIndex && InstalledContentRootNames.Contains(name))
-            {
-                return false;
-            }
-
-            if (!MarkerNames.Contains(name) && !JsBuildNames.Contains(name))
-            {
                 return true;
             }
 
-            var (group, title) = Classify(context, d, name);
-            if (group is null)
-            {
-                // Packages inside a node_modules that is not a project's each carry a package.json of
-                // their own; never look for artifacts in there.
-                return !name.Equals("node_modules", StringComparison.OrdinalIgnoreCase);
-            }
+            string name = tree.Dir(d).Name;
+            return name.Equals("$Recycle.Bin", StringComparison.OrdinalIgnoreCase) || InstalledContentNames.Contains(name) ||
+                rootIsDrive && tree.Dir(d).Parent == ScanTree.RootIndex && InstalledContentRootNames.Contains(name);
+        }
 
-            var finding = DirectoryFinding(context, d, group, title, StorageNature.DeveloperArtifact, LocationCategory.Developer,
-                GroupExplanations[group], minimumSize: 1L << 20);
+        foreach (var artifact in ProjectArtifacts.Find(tree, context.FileExists, Skip, cancellationToken))
+        {
+            var finding = DirectoryFinding(context, artifact.DirectoryIndex, artifact.Group, artifact.Title, StorageNature.DeveloperArtifact,
+                LocationCategory.Developer, GroupExplanations[artifact.Group], minimumSize: 1L << 20);
             if (finding is not null)
             {
                 findings.Add(finding);
             }
-
-            // Do not report nested matches inside an artifact folder.
-            return false;
-        }, cancellationToken);
+        }
 
         // Developer virtual disks among indexed files.
         int count = tree.FileRecordCount;
@@ -160,58 +127,6 @@ public sealed class DeveloperFilesDetector : DetectorBase
         }
 
         return findings;
-    }
-
-    private (string? Group, string? Title) Classify(DetectionContext context, int dir, string name)
-    {
-        var tree = context.Tree;
-        int parent = tree.Dir(dir).Parent;
-        string parentPath = tree.GetPath(parent);
-        bool Has(string file) => context.FileExists(Path.Combine(parentPath, file));
-        bool HasProjectFile() => HasFileWithExtension(parentPath, ".csproj", ".fsproj", ".vbproj", ".vcxproj", ".sln", ".slnx");
-
-        switch (name.ToLowerInvariant())
-        {
-            case "node_modules":
-                // Only a project's packages can be reinstalled: they sit next to its package.json. Electron
-                // applications ship a package.json too, inside resources\app (or app.asar.unpacked).
-                return Has("package.json") && !IsElectronBundle(tree, parent) ? ("node_modules", null) : (null, null);
-            case "__pycache__":
-                return ("Python bytecode caches", null);
-            case ".venv":
-            case "venv":
-            case "env":
-                return context.FileExists(Path.Combine(tree.GetPath(dir), "pyvenv.cfg")) ? ("Python environments", $"{name} ({tree.Dir(parent).Name})") : (null, null);
-            case "target":
-                if (Has("Cargo.toml") || context.FileExists(Path.Combine(tree.GetPath(dir), "CACHEDIR.TAG")))
-                {
-                    return ("Rust target folders", $"target ({tree.Dir(parent).Name})");
-                }
-
-                return Has("pom.xml") ? ("Java build output", $"target ({tree.Dir(parent).Name})") : (null, null);
-            case "bin":
-            case "obj":
-                return HasProjectFile() ? (".NET build output", $"{name} ({tree.Dir(parent).Name})") : (null, null);
-            case ".gradle":
-                return Has("build.gradle") || Has("build.gradle.kts") || Has("settings.gradle") || Has("settings.gradle.kts")
-                    ? ("Java build output", $".gradle ({tree.Dir(parent).Name})") : (null, null);
-            case "dist":
-            case "build":
-            case "out":
-                if (Has("package.json"))
-                {
-                    return ("JavaScript build output", $"{name} ({tree.Dir(parent).Name})");
-                }
-
-                if (Has("build.gradle") || Has("build.gradle.kts"))
-                {
-                    return ("Java build output", $"{name} ({tree.Dir(parent).Name})");
-                }
-
-                return (null, null);
-            default:
-                return JsBuildNames.Contains(name) ? ("JavaScript build output", $"{name} ({tree.Dir(parent).Name})") : (null, null);
-        }
     }
 
     private void AddKnownLocations(DetectionContext context, List<StorageFinding> findings, HashSet<int> claimed)
@@ -294,15 +209,6 @@ public sealed class DeveloperFilesDetector : DetectorBase
         return segments.Skip(hasDrive ? 1 : 0).Any(InstalledContentNames.Contains);
     }
 
-    private static bool IsElectronBundle(ScanTree tree, int dir)
-    {
-        string name = tree.Dir(dir).Name;
-        int parent = tree.Dir(dir).Parent;
-        return parent >= 0 &&
-               (name.Equals("app", StringComparison.OrdinalIgnoreCase) || name.Equals("app.asar.unpacked", StringComparison.OrdinalIgnoreCase)) &&
-               tree.Dir(parent).Name.Equals("resources", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static string DescribeWslDisk(string folder)
     {
         // %LOCALAPPDATA%\Packages\CanonicalGroupLimited.Ubuntu_...\LocalState or %LOCALAPPDATA%\wsl\{guid}
@@ -317,27 +223,5 @@ public sealed class DeveloperFilesDetector : DetectorBase
         }
 
         return PathUtil.GetName(folder);
-    }
-
-    private static bool HasFileWithExtension(string directory, params string[] extensions)
-    {
-        try
-        {
-            foreach (var file in Directory.EnumerateFiles(directory))
-            {
-                foreach (var ext in extensions)
-                {
-                    if (file.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-        }
-
-        return false;
     }
 }

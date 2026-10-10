@@ -5,6 +5,8 @@
   <Project Path="SpaceLens.Benchmarks/SpaceLens.Benchmarks.csproj" />
   <Project Path="SpaceLens.Core/SpaceLens.Core.csproj" />
   <Project Path="SpaceLens.Detectors/SpaceLens.Detectors.csproj" />
+  <Project Path="SpaceLens.Mac.Tests/SpaceLens.Mac.Tests.csproj" />
+  <Project Path="SpaceLens.Mac/SpaceLens.Mac.csproj" />
   <Project Path="SpaceLens.Tests/SpaceLens.Tests.csproj" />
   <Project Path="SpaceLens.Windows/SpaceLens.Windows.csproj" />
 </Solution>
