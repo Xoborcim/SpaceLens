@@ -24,7 +24,7 @@
     <ProjectReference Include="..\SpaceLens.Mac\SpaceLens.Mac.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <AvaloniaResource Include="Assets/**" />
+    <AvaloniaResource Include="Assets/**" Exclude="Assets/*.icns" />
     <InternalsVisibleTo Include="SpaceLens.Avalonia.Tests" />
   </ItemGroup>
 </Project>
