@@ -1,0 +1,67 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SpaceLens.Desktop.ViewModels"
+        xmlns:p="using:SpaceLens.Desktop.Platform"
+        x:Class="SpaceLens.Desktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="SpaceLens"
+        Width="1240" Height="820" MinWidth="900" MinHeight="600"
+        Icon="/Assets/SpaceLens.ico">
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Cmd+R" Command="{Binding RescanCommand}" />
+        <KeyBinding Gesture="Ctrl+R" Command="{Binding RescanCommand}" />
+        <KeyBinding Gesture="Cmd+O" Command="{Binding ScanFolderCommand}" />
+        <KeyBinding Gesture="Ctrl+O" Command="{Binding ScanFolderCommand}" />
+    </Window.KeyBindings>
+
+    <DockPanel>
+        <!-- Status bar: always visible, updated five times a second while scanning. -->
+        <Border DockPanel.Dock="Bottom" Padding="16,8" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding StatusTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding StatusDetail}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding StatusCurrent}" Classes="secondary" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsScanning}" />
+                    <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding ProgressIndeterminate}" IsVisible="{Binding IsScanning}" Margin="0,4,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Button Content="{Binding PauseText}" Command="{Binding PauseResumeCommand}" IsVisible="{Binding IsScanning}" />
+                    <Button Content="Cancel" Command="{Binding CancelScanCommand}" IsVisible="{Binding IsScanning}" />
+                    <Button Content="Rescan" Command="{Binding RescanCommand}" IsVisible="{Binding HasResults}" IsEnabled="{Binding CanScan}" ToolTip.Tip="Rescan (⌘R)" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid ColumnDefinitions="230,*">
+            <!-- Sidebar: disk, scan buttons, pages. -->
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="12,16">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,16">
+                        <TextBlock Text="SpaceLens" FontSize="18" FontWeight="Bold" Margin="4,0,0,4" />
+                        <ComboBox ItemsSource="{Binding Volumes}" SelectedItem="{Binding SelectedVolume}" HorizontalAlignment="Stretch" PlaceholderText="Disk">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="p:VolumeInfo">
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Content="Scan Disk" Command="{Binding ScanVolumeCommand}" IsEnabled="{Binding CanScan}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="accent" />
+                        <Button Content="Scan Folder…" Command="{Binding ScanFolderCommand}" IsEnabled="{Binding CanScan}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="⌘O" />
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage}" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PageViewModel">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="{Binding Icon}" Width="18" TextAlignment="Center" />
+                                    <TextBlock Text="{Binding Title}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <ContentControl Grid.Column="1" Content="{Binding CurrentPage}" Margin="24,20,24,12" />
+        </Grid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SpaceLens.Desktop.ViewModels"
+             x:Class="SpaceLens.Desktop.Views.SearchView"
+             x:DataType="vm:SearchViewModel">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+            <TextBlock Text="Search" Classes="title" />
+            <TextBox x:Name="QueryBox" Text="{Binding Query}" PlaceholderText="Search the scan: names, *.mov, &gt;5GB, older:1y, path:Library, -Caches, .iso OR .dmg" />
+            <TextBlock Text="{Binding Summary}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <ListBox x:Name="ItemList" ItemsSource="{Binding Items}" ItemTemplate="{StaticResource ItemRow}" />
+    </DockPanel>
+</UserControl>

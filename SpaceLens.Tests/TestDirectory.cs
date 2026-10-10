@@ -20,9 +20,12 @@ public sealed class TestDirectory : IDisposable
         return path;
     }
 
+    /// <summary>Full path of a relative path written with backslashes (translated to this platform's separator).</summary>
+    public string PathOf(string relativePath) => Path.Combine(Root, relativePath.Replace('\\', Path.DirectorySeparatorChar));
+
     public string File(string relativePath, long size)
     {
-        string path = Path.Combine(Root, relativePath);
+        string path = PathOf(relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var stream = new FileStream(path, FileMode.Create, FileAccess.Write);
         if (size > 0)

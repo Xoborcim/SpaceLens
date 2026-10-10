@@ -1,8 +1,8 @@
 # SpaceLens
 
-A fast, local, native Windows disk-space analyzer and uninstall assistant.
-C# / .NET 10 / WinUI 3 (Windows App SDK). No Electron, no webview, no background
-service, no network access, no telemetry.
+A fast, local disk-space analyzer and uninstall assistant for Windows and macOS.
+C# / .NET 10, with WinUI 3 (Windows App SDK) on Windows and Avalonia on macOS.
+No Electron, no webview, no background service, no network access, no telemetry.
 
 ## Projects
 
@@ -11,8 +11,11 @@ service, no network access, no telemetry.
 | `SpaceLens.Core` | Platform-neutral engine: compact scan tree, parallel scanner, breakdowns, search, safety policy, snapshot format, treemap layout. |
 | `SpaceLens.Windows` | Windows specifics: native enumerators (`NtQueryDirectoryFile`, `FindFirstFileEx`), drives, Recycle Bin, shell actions, installed-app sources (registry, MSI, MSIX). |
 | `SpaceLens.Detectors` | `IStorageDetector` implementations: developer caches, games (Steam, Xbox, Epic, Battle.net, GOG), Windows-managed locations, and so on. |
-| `SpaceLens.App` | WinUI 3 application. |
-| `SpaceLens.Tests` | xUnit tests for the engine, safety policy, detectors, search and serialization. |
+| `SpaceLens.App` | WinUI 3 application (Windows). |
+| `SpaceLens.Mac` | macOS specifics: `lstat`-based enumerator, volumes, Trash (`NSFileManager`), Finder actions, Full Disk Access check, applications and their Library leftovers, Mac storage detectors, property lists. |
+| `SpaceLens.Avalonia` | Avalonia application (macOS). |
+| `SpaceLens.Tests` | xUnit tests for the engine, safety policies, detectors, search and serialization. |
+| `SpaceLens.Mac.Tests`, `SpaceLens.Avalonia.Tests` | Tests for the macOS layer, and headless UI tests that drive the Mac app against a fake home folder. |
 | `SpaceLens.Benchmarks` | Scan harness and BenchmarkDotNet micro benchmarks. |
 
 ## Build, run, publish
@@ -62,6 +65,52 @@ excludes anything matching a term (`-node_modules`, `-type:video`), and `OR`
 separates alternatives (`.iso >4GB OR .vhdx`). Searches can be saved from the
 Saved searches menu on the results page.
 Large Files can also be limited to files not modified in 6 months to 5 years.
+
+## macOS
+
+The Mac app runs on the same engine and has Overview (with the map), Folders,
+Large Files, Search and Apps pages. It needs macOS 14 or later, on Apple
+silicon or Intel. The Windows-only pages (Changes, Duplicates, Cleanup basket,
+Settings and export) are not in it yet.
+
+Build it on a Mac (or any OS with the .NET 10 SDK):
+
+```bash
+dotnet run --project SpaceLens.Avalonia -c Release        # run from source
+scripts/publish-macos.sh arm64                             # or x64 for Intel
+# -> publish/macos-arm64/SpaceLens.app (self-contained, about 115 MB)
+```
+
+On a Mac the script signs the bundle ad hoc. A bundle built on another OS must
+be signed on a Mac before it runs (`codesign --force --deep --sign - SpaceLens.app`).
+The app is not notarized, so open it the first time with right-click > Open.
+
+How it differs from Windows:
+
+- **Full Disk Access.** macOS hides Mail, Messages, Safari and other app data
+  until you allow it in System Settings > Privacy & Security > Full Disk
+  Access. Without it those folders are left out of the totals, and the app
+  shows a banner with a button that opens that settings page.
+- **Sizes in decimal units**, like Finder (1 GB = 1,000,000,000 bytes), so the
+  numbers match what Finder and the Storage settings show.
+- **Scanning "/"** skips `/System/Volumes` (the firmlinked Data volume,
+  which would otherwise be counted twice) and other volumes under `/Volumes`.
+- **Removal** always goes to the Trash, the same way Finder does it, so items
+  can be put back. macOS itself, top-level folders like `/Library` and
+  `/Applications`, the home folder's own folders, `~/Library` and Apple's apps
+  are protected. Device backups, Photos libraries and Time Machine data point
+  to the app that manages them instead of being removable. Items in iCloud
+  Drive and shared `/Library` data come with a warning first.
+- **Apps** lists the applications in `/Applications` and `~/Applications`
+  with their size and what they keep in `~/Library`. Removing an app moves its
+  bundle to the Trash. Its Library data is listed afterwards and removed only
+  if you confirm separately.
+- Files of 1 MB or more are counted by the space they use on disk (so sparse
+  files are not overcounted). Smaller files are counted by
+  their length.
+
+The Mac code has been tested on Linux, where its native calls are checked at
+runtime and its UI runs headless. It has not yet been run on a real Mac.
 
 ## Architecture
 
@@ -167,6 +216,10 @@ which brings it to about 334 MB.
 
 ## Known limitations
 
+
+- On macOS, APFS clones (copies that share their data until changed) are
+  counted in full each time, so folder totals can be higher than the space
+  actually used. Finder counts them the same way.
 - Hard-linked files, which are common in WinSxS, are counted once per link,
   so totals for C:\Windows are higher than the space they actually use.
 - Files under 1 MB are counted in folder totals but are not listed or

@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SpaceLens.Desktop.ViewModels"
+             x:Class="SpaceLens.Desktop.Views.FoldersView"
+             x:DataType="vm:FoldersViewModel">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+            <TextBlock Text="Folders" Classes="title" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Content="↑ Up" Command="{Binding UpCommand}" IsEnabled="{Binding CanGoUp}" ToolTip.Tip="Parent folder" />
+                <ItemsControl ItemsSource="{Binding Breadcrumb}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:Crumb">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="{Binding Name}" Background="Transparent" Padding="6,2"
+                                        Command="{Binding $parent[UserControl].((vm:FoldersViewModel)DataContext).GoToCommand}" CommandParameter="{Binding}" />
+                                <TextBlock Text="›" VerticalAlignment="Center" Opacity="0.5" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+            <TextBlock Text="{Binding Summary}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <ListBox x:Name="ItemList" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}" ItemTemplate="{StaticResource ItemRow}" />
+    </DockPanel>
+</UserControl>

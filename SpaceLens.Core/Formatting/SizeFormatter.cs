@@ -2,30 +2,42 @@ using System.Globalization;
 
 namespace SpaceLens.Core.Formatting;
 
+/// <summary>How "KB", "MB", "GB" are counted: Windows Explorer uses binary multiples, macOS Finder decimal ones.</summary>
+public enum SizeUnits
+{
+    /// <summary>1 KB = 1024 bytes (Windows).</summary>
+    Binary,
+
+    /// <summary>1 KB = 1000 bytes (macOS since 10.6).</summary>
+    Decimal,
+}
+
 /// <summary>
-/// Formats byte counts the way Windows Explorer does (binary multiples labelled KB/MB/GB/TB).
+/// Formats byte counts the way the platform's file manager does: binary multiples labelled KB/MB/GB/TB
+/// like Windows Explorer by default, or decimal multiples like macOS Finder.
 /// </summary>
 public static class SizeFormatter
 {
     private static readonly string[] Units = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
-    public static string Format(long bytes)
+    public static string Format(long bytes, SizeUnits units = SizeUnits.Binary)
     {
         if (bytes < 0)
         {
-            return "-" + Format(bytes == long.MinValue ? long.MaxValue : -bytes);
+            return "-" + Format(bytes == long.MinValue ? long.MaxValue : -bytes, units);
         }
 
-        if (bytes < 1024)
+        int step = units == SizeUnits.Decimal ? 1000 : 1024;
+        if (bytes < step)
         {
             return bytes == 1 ? "1 byte" : bytes.ToString("N0", CultureInfo.CurrentCulture) + " bytes";
         }
 
         double value = bytes;
         int unit = 0;
-        while (value >= 1024 && unit < Units.Length - 1)
+        while (value >= step && unit < Units.Length - 1)
         {
-            value /= 1024;
+            value /= step;
             unit++;
         }
 
@@ -44,8 +56,9 @@ public static class SizeFormatter
     /// <summary>
     /// Parses sizes such as "5GB", "1.5 gb", "1,5 GB", "1,000MB", "500MB", "100k", "42" (bytes).
     /// A comma followed by exactly three digits is a thousands separator; otherwise it is a decimal point.
+    /// KB/MB/GB follow <paramref name="units"/>; KiB/MiB/GiB are always binary.
     /// </summary>
-    public static bool TryParse(ReadOnlySpan<char> text, out long bytes)
+    public static bool TryParse(ReadOnlySpan<char> text, out long bytes, SizeUnits units = SizeUnits.Binary)
     {
         bytes = 0;
         text = text.Trim();
@@ -66,14 +79,20 @@ public static class SizeFormatter
         }
 
         var unit = text[i..].Trim().ToString().ToUpperInvariant();
+        long k = units == SizeUnits.Decimal ? 1000 : 1024;
         long multiplier = unit switch
         {
             "" or "B" or "BYTES" => 1,
-            "K" or "KB" or "KIB" => 1L << 10,
-            "M" or "MB" or "MIB" => 1L << 20,
-            "G" or "GB" or "GIB" => 1L << 30,
-            "T" or "TB" or "TIB" => 1L << 40,
-            "P" or "PB" or "PIB" => 1L << 50,
+            "KIB" => 1L << 10,
+            "MIB" => 1L << 20,
+            "GIB" => 1L << 30,
+            "TIB" => 1L << 40,
+            "PIB" => 1L << 50,
+            "K" or "KB" => k,
+            "M" or "MB" => k * k,
+            "G" or "GB" => k * k * k,
+            "T" or "TB" => k * k * k * k,
+            "P" or "PB" => k * k * k * k * k,
             _ => -1,
         };
 

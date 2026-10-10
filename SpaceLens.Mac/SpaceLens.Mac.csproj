@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    macOS platform layer: volumes, Trash, Finder, installed applications and macOS-specific storage
+    detectors. It targets plain net10.0 so it builds, and its pure logic is tested, on any OS; the parts
+    that call macOS (Foundation through the Objective-C runtime, /usr/bin/open) check OperatingSystem.IsMacOS().
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SpaceLens.Mac</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SpaceLens.Core\SpaceLens.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SpaceLens.Mac.Tests" />
+  </ItemGroup>
+</Project>

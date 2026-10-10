@@ -14,6 +14,14 @@ public enum ProtectionLevel
     Protected,
 }
 
+/// <summary>Decides whether an item may be removed through SpaceLens, and how strongly to warn. One per platform.</summary>
+public interface IItemSafetyPolicy
+{
+    SafetyAssessment AssessDirectory(string path, NodeFlags flags = NodeFlags.None);
+
+    SafetyAssessment AssessFile(string path, FileAttributes attributes = 0);
+}
+
 public sealed record SafetyAssessment(ProtectionLevel Level, string Label, string? Explanation = null, string? Advice = null)
 {
     public static SafetyAssessment Ordinary { get; } = new(ProtectionLevel.None, "User file");
@@ -83,7 +91,7 @@ public sealed class KnownLocations
 /// The policy is deliberately conservative: it blocks whole system and application directories,
 /// and only warns (never blocks) for individual files in sensitive places.
 /// </summary>
-public sealed class SafetyPolicy
+public sealed class SafetyPolicy : IItemSafetyPolicy
 {
     private readonly KnownLocations _known;
     private readonly string[] _essentialRoots;

@@ -240,12 +240,13 @@ public sealed class ScanTree
         var builder = new System.Text.StringBuilder(totalLength);
         builder.Append(RootPath);
         bool needsSeparator = !PathUtil.EndsWithSeparator(RootPath);
+        char separator = PathUtil.SeparatorOf(RootPath);
         for (int i = depth - 1; i >= 0; i--)
         {
             int node = i < chain.Length ? chain[i] : overflow![i - chain.Length];
             if (needsSeparator)
             {
-                builder.Append('\\');
+                builder.Append(separator);
             }
 
             builder.Append(_dirs[node].Name);
@@ -259,7 +260,7 @@ public sealed class ScanTree
     {
         ref var file = ref _files[fileIndex];
         string dir = GetPath(file.Directory);
-        return PathUtil.EndsWithSeparator(dir) ? dir + file.Name : dir + "\\" + file.Name;
+        return PathUtil.Combine(dir, file.Name);
     }
 
     public int GetDepth(int dirIndex)
@@ -301,14 +302,15 @@ public sealed class ScanTree
             return RootIndex;
         }
 
-        string rootWithSeparator = PathUtil.EndsWithSeparator(RootPath) ? RootPath : RootPath + "\\";
+        char separator = PathUtil.SeparatorOf(RootPath);
+        string rootWithSeparator = PathUtil.EndsWithSeparator(RootPath) ? RootPath : RootPath + separator;
         if (!normalized.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
         {
             return -1;
         }
 
         int current = RootIndex;
-        foreach (var segment in normalized[rootWithSeparator.Length..].Split('\\', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var segment in normalized[rootWithSeparator.Length..].Split(separator, StringSplitOptions.RemoveEmptyEntries))
         {
             current = FindChild(current, segment);
             if (current < 0)

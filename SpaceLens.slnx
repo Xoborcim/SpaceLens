@@ -2,9 +2,13 @@
   <Project Path="SpaceLens.App/SpaceLens.App.csproj">
     <Platform Project="x64" />
   </Project>
+  <Project Path="SpaceLens.Avalonia.Tests/SpaceLens.Avalonia.Tests.csproj" />
+  <Project Path="SpaceLens.Avalonia/SpaceLens.Avalonia.csproj" />
   <Project Path="SpaceLens.Benchmarks/SpaceLens.Benchmarks.csproj" />
   <Project Path="SpaceLens.Core/SpaceLens.Core.csproj" />
   <Project Path="SpaceLens.Detectors/SpaceLens.Detectors.csproj" />
+  <Project Path="SpaceLens.Mac.Tests/SpaceLens.Mac.Tests.csproj" />
+  <Project Path="SpaceLens.Mac/SpaceLens.Mac.csproj" />
   <Project Path="SpaceLens.Tests/SpaceLens.Tests.csproj" />
   <Project Path="SpaceLens.Windows/SpaceLens.Windows.csproj" />
 </Solution>

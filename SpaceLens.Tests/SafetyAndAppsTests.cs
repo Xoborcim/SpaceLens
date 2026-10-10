@@ -48,9 +48,12 @@ public class SafetyPolicyTests
     [InlineData(@"C:\$Recycle.Bin")]
     [InlineData(@"C:\EFI")]
     [InlineData(@"C:\Windows.old")]
-    [InlineData(@"D:\System Volume Information\something")]
     public void Protected_directories_cannot_be_deleted(string path) =>
         Assert.False(_policy.AssessDirectory(path).CanDelete, path);
+
+    [WindowsFact] // Path.GetPathRoot only understands drive letters on Windows.
+    public void Special_folders_are_protected_below_any_drive_root() =>
+        Assert.False(_policy.AssessDirectory(@"D:\System Volume Information\something").CanDelete);
 
     [Theory]
     [InlineData(@"C:\Users\me\Downloads\old-stuff")]
@@ -205,7 +208,7 @@ public class UninstallParsingTests
         Assert.Equal($"/x {code}", command.Arguments);
     }
 
-    [Fact]
+    [WindowsFact]
     public void Infers_install_folder_from_display_icon_and_rejects_broad_folders()
     {
         var app = UninstallEntryParser.Parse("Tool", Values(
@@ -299,7 +302,7 @@ public class DeduplicationTests
 
 public class DetectorTests
 {
-    [Fact]
+    [WindowsFact]
     public async Task Developer_detector_requires_project_markers_and_folds_nested_matches()
     {
         using var dir = new TestDirectory();
@@ -457,7 +460,7 @@ public class DetectorTests
 
 public class DriveTests
 {
-    [Fact]
+    [WindowsFact]
     public void Lists_the_system_drive_with_sane_numbers()
     {
         var drives = DriveService.GetDrives();
@@ -470,7 +473,7 @@ public class DriveTests
         Assert.NotEqual(0u, system.SerialNumber);
     }
 
-    [Fact]
+    [WindowsFact]
     public void Resolves_the_drive_of_a_path()
     {
         var drive = DriveService.GetDrive(Environment.GetFolderPath(Environment.SpecialFolder.Windows));
