@@ -87,6 +87,13 @@ public sealed class ScanOptions
     /// </summary>
     public bool UseAllocatedSize { get; init; } = true;
 
+    /// <summary>
+    /// Folders (display paths) that are recorded but never entered. On macOS, scanning <c>/</c> must skip
+    /// <c>/System/Volumes</c> (the data volume again, through firmlinks) and <c>/Volumes</c> (other disks),
+    /// the way <c>du -x</c> stays on one file system.
+    /// </summary>
+    public IReadOnlyCollection<string> ExcludedPaths { get; init; } = [];
+
     /// <summary>Run workers at below-normal priority so the UI stays responsive.</summary>
     public bool LowPriorityThreads { get; init; } = true;
 

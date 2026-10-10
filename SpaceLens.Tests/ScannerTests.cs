@@ -8,7 +8,12 @@ namespace SpaceLens.Tests;
 
 public class ScannerTests
 {
-    public static TheoryData<ScanEngine> Engines => new() { ScanEngine.Native, ScanEngine.FindFirstFile, ScanEngine.Managed };
+    /// <summary>The native engines call Win32; on macOS and Linux only the managed engine runs.</summary>
+    public static TheoryData<ScanEngine> Engines => OperatingSystem.IsWindows()
+        ? new() { ScanEngine.Native, ScanEngine.FindFirstFile, ScanEngine.Managed }
+        : new() { ScanEngine.Managed };
+
+    private static ScanEngine DefaultEngine => OperatingSystem.IsWindows() ? ScanEngine.Native : ScanEngine.Managed;
 
     private static async Task<(ScanTree Tree, ScanResult Result)> Scan(string root, ScanEngine engine, int workers = 4, long threshold = 1024)
     {
@@ -37,7 +42,7 @@ public class ScannerTests
         Assert.Equal(5, tree.Root.TotalFiles);
         Assert.Equal(5, tree.Root.TotalDirs); // a, a\b, a\b\c, d, empty
         Assert.Equal(6_000, tree.Dir(tree.FindDirectory(Path.Combine(dir.Root, "a"))).TotalSize);
-        Assert.Equal(5_000, tree.Dir(tree.FindDirectory(Path.Combine(dir.Root, @"a\b"))).TotalSize);
+        Assert.Equal(5_000, tree.Dir(tree.FindDirectory(dir.PathOf(@"a\b"))).TotalSize);
         Assert.Equal(0, tree.Dir(tree.FindDirectory(Path.Combine(dir.Root, "empty"))).TotalSize);
         Assert.Equal(500, tree.Root.OwnSize);
         Assert.Equal(0, result.Errors);
@@ -67,7 +72,7 @@ public class ScannerTests
         Assert.Equal("large.mp4", tree.File(largest[0]).Name);
     }
 
-    [Theory]
+    [WindowsTheory] // junctions / Windows ACLs
     [MemberData(nameof(Engines))]
     public async Task Junction_loops_are_recorded_but_not_followed(ScanEngine engine)
     {
@@ -111,7 +116,7 @@ public class ScannerTests
         Assert.True((tree.Dir(link).Flags & NodeFlags.ReparsePoint) != 0);
     }
 
-    [Theory]
+    [WindowsTheory] // junctions / Windows ACLs
     [MemberData(nameof(Engines))]
     public async Task Inaccessible_directories_are_recorded_and_scan_continues(ScanEngine engine)
     {
@@ -166,9 +171,10 @@ public class ScannerTests
         dir.File(@"has.dots.in.name\file.with.many.dots.tar.gz", 700);
 
         // A trailing space and trailing dot are illegal through Win32 normalization but valid on NTFS.
-        string odd = @"\\?\" + Path.Combine(dir.Root, "trailing space ");
+        // (Ordinary names on macOS and Linux.)
+        string odd = OperatingSystem.IsWindows() ? @"\\?\" + Path.Combine(dir.Root, "trailing space ") : Path.Combine(dir.Root, "trailing space ");
         Directory.CreateDirectory(odd);
-        System.IO.File.WriteAllBytes(odd + @"\dot.", new byte[1200]);
+        System.IO.File.WriteAllBytes(Path.Combine(odd, "dot."), new byte[1200]);
 
         var (tree, result) = await Scan(dir.Root, engine);
 
@@ -218,7 +224,7 @@ public class ScannerTests
         var tree = new ScanTree(dir.Root);
         var gate = new PauseGate();
         gate.Pause();
-        var task = ScannerFactory.Create(ScanEngine.Native).ScanAsync(tree, new ScanOptions { MaxParallelism = 3, UseAllocatedSize = false }, gate, CancellationToken.None);
+        var task = ScannerFactory.Create(DefaultEngine).ScanAsync(tree, new ScanOptions { MaxParallelism = 3, UseAllocatedSize = false }, gate, CancellationToken.None);
         await Task.Delay(50);
         Assert.False(task.IsCompleted);
         gate.Resume();

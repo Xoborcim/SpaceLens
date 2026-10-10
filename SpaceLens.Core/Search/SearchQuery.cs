@@ -257,7 +257,8 @@ public sealed class SearchQuery
 
             if (term.StartsWith("path:", StringComparison.OrdinalIgnoreCase))
             {
-                string wanted = term[5..].Replace('/', '\\');
+                // Either separator works: "path:Users/me" matches C:\Users\me and /Users/me alike.
+                string wanted = term[5..].Replace('\\', '/');
                 if (wanted.Length > 0)
                 {
                     _paths.Add(wanted);
@@ -357,7 +358,8 @@ public sealed class SearchQuery
 
             foreach (var p in _paths)
             {
-                if (!item.Path.Contains(p, StringComparison.OrdinalIgnoreCase))
+                string path = item.Path;
+                if (!(PathUtil.IsUnixPath(path) ? path : path.Replace('\\', '/')).Contains(p, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }

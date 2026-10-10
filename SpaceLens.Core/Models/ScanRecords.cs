@@ -22,6 +22,12 @@ public enum NodeFlags : ushort
 
     Hidden = 1 << 5,
     System = 1 << 6,
+
+    /// <summary>
+    /// Deliberately not entered (<see cref="Scanning.ScanOptions.ExcludedPaths"/>): another volume mounted
+    /// inside the scanned one, or a second view of data counted elsewhere (macOS firmlinks).
+    /// </summary>
+    Excluded = 1 << 7,
 }
 
 /// <summary>

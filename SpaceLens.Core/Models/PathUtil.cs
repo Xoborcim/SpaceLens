@@ -1,20 +1,39 @@
 namespace SpaceLens.Core.Models;
 
+/// <summary>
+/// Path helpers for the two path styles the engine handles. A path that starts with <c>/</c> is a Unix
+/// path (macOS, Linux), separated by <c>/</c>. Anything else is a Windows path (<c>C:\</c>, <c>\\server\share</c>),
+/// separated by <c>\</c>, which may use the <c>\\?\</c> long-path form. A scan tree uses the style of its root.
+/// Comparisons ignore case: Windows and the default macOS (APFS) volume format are case-insensitive.
+/// </summary>
 public static class PathUtil
 {
     public const string LongPathPrefix = @"\\?\";
     public const string LongUncPrefix = @"\\?\UNC\";
 
+    public static bool IsUnixPath(string path) => path.Length > 0 && path[0] == '/';
+
+    /// <summary>The separator used by paths in the style of <paramref name="path"/>.</summary>
+    public static char SeparatorOf(string path) => IsUnixPath(path) ? '/' : '\\';
+
     public static bool EndsWithSeparator(string path) =>
         path.Length > 0 && (path[^1] == '\\' || path[^1] == '/');
 
     /// <summary>
-    /// Produces a canonical display path: backslashes, no long-path prefix, no trailing separator
-    /// except for drive roots ("C:\").
+    /// Produces a canonical display path. Windows: backslashes, no long-path prefix, upper-case drive
+    /// letter, no trailing separator except for drive roots ("C:\"). Unix: no trailing separator except
+    /// for the root ("/").
     /// </summary>
     public static string NormalizeDisplayPath(string path)
     {
-        path = StripLongPathPrefix(path.Trim().Trim('"'))!.Replace('/', '\\');
+        path = path.Trim().Trim('"');
+        if (IsUnixPath(path))
+        {
+            string trimmed = path.TrimEnd('/');
+            return trimmed.Length == 0 ? "/" : trimmed;
+        }
+
+        path = StripLongPathPrefix(path)!.Replace('/', '\\');
         if (path.Length == 2 && path[1] == ':')
         {
             return char.ToUpperInvariant(path[0]) + @":\";
@@ -37,7 +56,7 @@ public static class PathUtil
     /// <summary>Converts a display path to the <c>\\?\</c> form, which bypasses MAX_PATH and Win32 name normalization.</summary>
     public static string ToLongPath(string displayPath)
     {
-        if (displayPath.StartsWith(LongPathPrefix, StringComparison.Ordinal))
+        if (IsUnixPath(displayPath) || displayPath.StartsWith(LongPathPrefix, StringComparison.Ordinal))
         {
             return displayPath;
         }
@@ -85,7 +104,12 @@ public static class PathUtil
             return true;
         }
 
-        string prefix = EndsWithSeparator(root) ? root : root + "\\";
+        if (IsUnixPath(path) != IsUnixPath(root))
+        {
+            return false;
+        }
+
+        string prefix = EndsWithSeparator(root) ? root : root + SeparatorOf(root);
         return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -95,6 +119,11 @@ public static class PathUtil
     public static string GetName(string path)
     {
         path = NormalizeDisplayPath(path);
+        if (IsUnixPath(path))
+        {
+            return path == "/" ? path : path[(path.LastIndexOf('/') + 1)..];
+        }
+
         if (path.Length == 3 && path[1] == ':')
         {
             return path;
@@ -107,6 +136,17 @@ public static class PathUtil
     public static string? GetParent(string path)
     {
         path = NormalizeDisplayPath(path);
+        if (IsUnixPath(path))
+        {
+            if (path == "/")
+            {
+                return null;
+            }
+
+            int separator = path.LastIndexOf('/');
+            return separator == 0 ? "/" : path[..separator];
+        }
+
         if (path.Length <= 3)
         {
             return null;
@@ -143,5 +183,5 @@ public static class PathUtil
     }
 
     public static string Combine(string directory, string name) =>
-        EndsWithSeparator(directory) ? directory + name : directory + "\\" + name;
+        EndsWithSeparator(directory) ? directory + name : string.Concat(directory, SeparatorOf(directory).ToString(), name);
 }

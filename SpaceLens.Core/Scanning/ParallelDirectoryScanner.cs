@@ -174,6 +174,8 @@ public sealed class ParallelDirectoryScanner : IDiskScanner
             private readonly bool _useAllocated;
             private readonly bool _reparseTagsKnown;
             private readonly long _indexThreshold;
+            private readonly char _separator;
+            private readonly HashSet<string>? _excluded;
 
             // State of the directory currently being enumerated.
             private int _node;
@@ -190,6 +192,10 @@ public sealed class ParallelDirectoryScanner : IDiskScanner
                 _useAllocated = run._options.UseAllocatedSize;
                 _reparseTagsKnown = run._factory.ReportsReparseTags;
                 _indexThreshold = _tree.FileIndexThreshold;
+                _separator = PathUtil.SeparatorOf(_tree.RootPath);
+                _excluded = run._options.ExcludedPaths.Count > 0
+                    ? new HashSet<string>(run._options.ExcludedPaths.Select(PathUtil.NormalizeDisplayPath), StringComparer.OrdinalIgnoreCase)
+                    : null;
             }
 
             public void Run()
@@ -360,12 +366,19 @@ public sealed class ParallelDirectoryScanner : IDiskScanner
                 }
 
                 string name = entry.Name.ToString();
+                string childPath = _path[^1] == _separator ? string.Concat(_path, name) : string.Concat(_path, _separator.ToString(), name);
+                if (follow && _excluded is not null && _excluded.Contains(PathUtil.StripLongPathPrefix(childPath)!))
+                {
+                    follow = false;
+                    flags |= NodeFlags.Excluded | NodeFlags.Scanned;
+                }
+
                 int child = _tree.AddDirectory(_node, name, flags, entry.LastWriteUtc);
                 _newSubdirs++;
                 if (follow)
                 {
                     Interlocked.Increment(ref _run._pending);
-                    _local.Add(new WorkItem(child, _path.EndsWith('\\') ? string.Concat(_path, name) : string.Concat(_path, "\\", name)));
+                    _local.Add(new WorkItem(child, childPath));
                 }
             }
 
