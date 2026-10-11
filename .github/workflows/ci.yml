@@ -20,14 +20,16 @@ jobs:
         # The tests create fixture folders under %TEMP%. On hosted runners that is the 8.3 short path
         # C:\Users\RUNNER~1\AppData\Local\Temp, which the AppData/installed-content rules treat
         # differently from a normal dev machine, so use the runner's own temp directory instead.
-        # The Avalonia UI tests drive the macOS app against a fake Mac home and run in the macOS job.
+        # The Avalonia UI tests drive the macOS app against a fake Mac home and run in the mac-layer job.
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
         run: dotnet test SpaceLens.slnx --no-restore --configuration Release --filter "FullyQualifiedName!~SpaceLens.Avalonia.Tests"
 
-  macos:
-    runs-on: macos-latest
+  mac-layer:
+    # The macOS layer and the headless Avalonia UI tests use a fake Mac home folder. They target plain
+    # net10.0; a real Mac runner has /Applications/Safari.app, which one test assumes is absent.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
